@@ -233,6 +233,74 @@
             color: #ef4444;
             font-weight: bold;
         }
+
+        .pattern-controls {
+            display: flex;
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin: 0;
+            height: 0;
+        }
+
+        .control-button {
+            padding: 0.5rem 0.8rem;
+            border-radius: 50%;
+            border: 2px solid #ef4444;
+            background: white;
+            color: #ef4444;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 1rem;
+            font-weight: 700;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+            z-index: 20;
+        }
+
+        .control-button:hover {
+            background: #ef4444;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .control-button.active {
+            background: #ef4444;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        #random-pattern {
+            position: absolute;
+            bottom: -50px; /* Position below the game area */
+            left: 50%;
+            transform: translateX(-50%);
+            margin-top: 10px;
+            width: 50px;
+            height: 50px;
+            font-size: 1.2rem;
+            z-index: 20;
+        }
+
+        #pattern-indicator {
+            position: absolute;
+            bottom: -85px; /* Position below the random button */
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 0.3rem 0.8rem;
+            border-radius: 1rem;
+            min-width: 5rem;
+            text-align: center;
+            z-index: 15;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
     </style>
 </head>
 <body>
@@ -254,6 +322,10 @@
                     <div id="status" class="status"></div>
                     <div id="exp_time" class="exp_time"></div>
                     <div id="timer" class="timer"></div>
+                </div>
+                <div class="pattern-controls">
+                    <button id="random-pattern" class="control-button">⟳</button>
+                    <span id="pattern-indicator"></span>
                 </div>
                 <div id="game-area" class="game-area" onmousemove="handleMouseMove(event)" onclick="handleClick()" onmouseleave="handleMouseLeave()"></div>
             </div>
