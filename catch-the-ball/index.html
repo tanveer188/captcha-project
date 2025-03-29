@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <title>Secure CAPTCHA Game</title>
     <style>
         :root {
@@ -327,6 +328,9 @@
                     <button id="random-pattern" class="control-button">⟳</button>
                 </div>
                 <div id="game-area" class="game-area" onmousemove="handleMouseMove(event)" onclick="handleClick()" onmouseleave="handleMouseLeave()"></div>
+            </div>
+            <div class="game-controls">
+                <button onclick="displayBlockchainData()" class="button">Show Blockchain Data</button>
             </div>
         </div>
     </div>

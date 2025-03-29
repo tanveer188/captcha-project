@@ -96,38 +96,38 @@ function stopGame() {
     }
 }
 
-async function startGame() {
-    const initialized = await initializeCaptcha();
-    const blockchain = new Blockchain();
-    blockchain.loadChain(); // Load existing chain first
-    blockchain.addScore(5); // Add new score
-    await blockchain.minePendingScores(); // Mine the pending scores
+// async function startGame() {
+//     const initialized = await initializeCaptcha();
+//     const blockchain = new Blockchain();
+//     blockchain.loadChain(); // Load existing chain first
+//     blockchain.addScore(5); // Add new score
+//     await blockchain.minePendingScores(); // Mine the pending scores
     
-    if (!initialized) {
-        alert('Failed to initialize verification. Please try again.');
-        return;
-    }
+//     if (!initialized) {
+//         alert('Failed to initialize verification. Please try again.');
+//         return;
+//     }
 
-    document.getElementById('start-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'block';
-    gameStarted = true;
-    gameStatus = null;
-    time = 0;
-    patternIndex = 0;
-    startAnimation();
+//     document.getElementById('start-screen').style.display = 'none';
+//     document.getElementById('game-screen').style.display = 'block';
+//     gameStarted = true;
+//     gameStatus = null;
+//     time = 0;
+//     patternIndex = 0;
+//     startAnimation();
 
-    // Check total score after mining
-    const totalScore = blockchain.getTotalScore();
-    console.log('Current total score:', totalScore);
-    if (totalScore >= 50) {
-        endGame('won');
-    }
-}
+//     // Check total score after mining
+//     const totalScore = blockchain.getTotalScore();
+//     console.log('Current total score:', totalScore);
+//     if (totalScore >= 50) {
+//         endGame('won');
+//     }
+// }
 
-function resetGame() {
-    stopGame();
-    startGame();
-}
+// function resetGame() {
+//     stopGame();
+//     startGame();
+// }
 
 function handleMouseMove(event) {
     if (!isGameActive) return;
@@ -347,11 +347,13 @@ async function verifyCaptcha(patternIndex) {
 
 async function startGame() {
     const initialized = await initializeCaptcha();
-    const blockchain = new Blockchain();
-    blockchain.loadChain(); // Load existing chain first
-    blockchain.addScore(5); // Add new score
-   // Mine the pending scores
     
+    // Initialize blockchain and add new score
+    const blockchain = new Blockchain();
+    blockchain.loadChain();
+    blockchain.addScore(5, "Game Started Score"); // Add 5 points when game starts
+    await blockchain.minePendingScores(); // Mine the pending scores
+
     if (!initialized) {
         alert('Failed to initialize verification. Please try again.');
         return;
@@ -374,22 +376,9 @@ async function startGame() {
 }
 
 function handleMouseMove(event) {
-    if (!gameStarted || gameStatus) return;
-    
-    const rect = event.currentTarget.getBoundingClientRect();
-    cursorPosition = {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top
-    };
-    updatePlayerBall();
 }
 
 function handleMouseLeave() {
-    if (!gameStatus) {
-        gameStarted = false;
-        document.getElementById('game-screen').style.display = 'none';
-        document.getElementById('start-screen').style.display = 'block';
-    }
 }
 
 function endGame(status) {
@@ -399,14 +388,13 @@ function endGame(status) {
     const statusElement = document.getElementById('status');
     statusElement.textContent = status === 'won' ? 'Verification Successful ✓' : 'Verification Failed ✗';
     statusElement.className = `status ${status}`;
-    const scoreChain = new Blockchain();
+
     const gameArea = document.getElementById('game-area');
     gameArea.className = `game-area ${status}`;
 
     if (status === 'lost') {
         setTimeout(() => {
-            resetGame();
-            scoreChain.addScore(-5);
+            resetGame(); 
         }, 2000);
     } else {
         const playAgainButton = document.createElement('button');
@@ -416,15 +404,7 @@ function endGame(status) {
         statusElement.appendChild(document.createElement('br'));
         statusElement.appendChild(playAgainButton);
 
-        // Create blockchain instance and properly handle score updates
-        
-        scoreChain.loadChain(); // Load existing chain
-        // scoreChain.addScore(10, 'Verification successful'); // Add success score
-        scoreChain.minePendingScores().then(() => {
-            const newTotal = scoreChain.getTotalScore();
-        });
-        scoreChain.saveChain();
-        scoreChain.loadChain();
+      
     }
 }
 
@@ -556,7 +536,9 @@ function changePattern() {
     document.getElementById('current-pattern').textContent = currentPattern;
 }
     //   // Block class
-      class Block {
+
+
+class Block {
     constructor(index, timestamp, data, previousHash) {
         this.index = index;
         this.timestamp = timestamp;
@@ -564,36 +546,47 @@ function changePattern() {
         this.previousHash = previousHash || '';
         this.hash = '';
         this.nonce = 0;
+    }
 
-        this.calculateHash = function () {
-            return CryptoJS.SHA256(
-                this.index +
-                this.previousHash +
-                this.timestamp +
-                JSON.stringify(this.data) +
-                this.nonce
-            ).toString();
-        };
+    calculateHash() {
+        return CryptoJS.SHA256(
+            this.index +
+            this.previousHash +
+            this.timestamp +
+            JSON.stringify(this.data) +
+            this.nonce
+        ).toString();
+    }
 
-        this.mineBlock = function (difficulty) {
-            const startTime = Date.now();
-            const target = Array(difficulty + 1).join('0');
+    async mineBlock(difficulty) {
+        const startTime = Date.now();
+        const target = '0'.repeat(difficulty);
+        const miningStatus = document.getElementById('mining-status');
 
-            while (this.hash.substring(0, difficulty) !== target) {
-                this.nonce++;
-                this.hash = this.calculateHash();
+        while (this.hash.substring(0, difficulty) !== target) {
+            this.nonce++;
+            this.hash = this.calculateHash();
 
-                if (this.nonce % 10000 === 0) {
-                    const elapsed = (Date.now() - startTime) / 1000;
-                    document.getElementById('mining-status').textContent =
-                        `Mining... Hashes: ${this.nonce.toLocaleString()}, Time: ${elapsed.toFixed(1)}s`;
+            if (this.nonce % 10000 === 0) {
+                const elapsed = (Date.now() - startTime) / 1000;
+                const hashRate = Math.floor(this.nonce / elapsed);
+                
+                if (miningStatus) {
+                    miningStatus.textContent = 
+                        `Mining... Hashes: ${this.nonce.toLocaleString()} (${hashRate.toLocaleString()} h/s), ` +
+                        `Time: ${elapsed.toFixed(1)}s`;
                 }
+                
+                // Allow UI to update
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
+        }
 
-            const elapsed = (Date.now() - startTime) / 1000;
-            document.getElementById('mining-status').textContent =
-                `Block mined in ${elapsed.toFixed(2)}s with nonce ${this.nonce}`;
-        };
+        const elapsed = (Date.now() - startTime) / 1000;
+        if (miningStatus) {
+            miningStatus.textContent = 
+                `Block mined in ${elapsed.toFixed(2)}s with nonce ${this.nonce.toLocaleString()}`;
+        }
     }
 }
 
@@ -698,8 +691,12 @@ function changePattern() {
         this.getTotalScore = function() {
             let total = 0;
             for (const block of this.chain) {
-                if (block.data && typeof block.data.score !== 'undefined') {
-                    total += parseInt(block.data.score, 5) || 0;
+                if (block.data && block.data.score) {
+                    // Use base 10 for parsing integers and handle invalid values
+                    const score = parseInt(block.data.score, 10);
+                    if (!isNaN(score)) {
+                        total += score;
+                    }
                 }
             }
             return total;
@@ -709,4 +706,45 @@ function changePattern() {
         this.loadChain();
     }
 
-// Add a new function to update score displ
+// Add a new function to update score display
+function displayBlockchainData() {
+    const blockchain = new Blockchain();
+    blockchain.loadChain();
+    
+    // Create or get the display container
+    let displayDiv = document.getElementById('blockchain-display');
+    if (!displayDiv) {
+        displayDiv = document.createElement('div');
+        displayDiv.id = 'blockchain-display';
+        document.querySelector('.game-container').appendChild(displayDiv);
+    }
+    
+    // Clear previous content
+    displayDiv.innerHTML = `
+        <h3>Blockchain Data</h3>
+        <div class="chain-info">
+            <p>Total Score: ${blockchain.getTotalScore()}</p>
+            <p>Chain Length: ${blockchain.chain.length}</p>
+            <p>Pending Scores: ${blockchain.pendingScores.length}</p>
+            <p>Mining Difficulty: ${blockchain.difficulty}</p>
+        </div>
+        <div class="blocks-container"></div>
+    `;
+
+    // Add each block's data
+    const blocksContainer = displayDiv.querySelector('.blocks-container');
+    blockchain.chain.forEach((block, index) => {
+        const blockDiv = document.createElement('div');
+        blockDiv.className = 'block-data';
+        blockDiv.innerHTML = `
+            <h4>Block #${block.index}</h4>
+            <p>Timestamp: ${new Date(block.timestamp).toLocaleString()}</p>
+            <p>Score: ${block.data.score}</p>
+            <p>Description: ${block.data.description}</p>
+            <p>Hash: ${block.hash.substring(0, 20)}...</p>
+            <p>Previous Hash: ${block.previousHash.substring(0, 20)}...</p>
+            <p>Nonce: ${block.nonce}</p>
+        `;
+        blocksContainer.appendChild(blockDiv);
+    });
+}
