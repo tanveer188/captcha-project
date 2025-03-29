@@ -155,12 +155,14 @@ let animationFrameId;
 let winningPatternIndex;
 let patternToWatch;
 
+// Add a heart pattern to the patternNames array
 const patternNames = [
     "Circle",
     "Square",
     "Figure-8",
     "Triangle",
-    "Zigzag"
+    "Zigzag",
+    "Heart"  // Add the new pattern name
 ];
 
 // Generate noise patterns
@@ -289,6 +291,35 @@ const patterns = [
         return {
             x: CENTER.x + Math.sin(t * frequency) * amplitude,
             y: CENTER.y + ((t % (2 * amplitude)) - amplitude)
+        };
+    },
+    
+    // Heart pattern (new)
+    (t) => {
+        const period = 5000; // 5 seconds for a full cycle
+        const normalizedTime = (t % period) / period;
+        const scale = RADIUS * 0.8; // Scale to fit within the game area
+        
+        // Parametric equation for a heart shape
+        // x = 16 * sin(t)^3
+        // y = 13 * cos(t) - 5 * cos(2t) - 2 * cos(3t) - cos(4t)
+        
+        const angle = normalizedTime * Math.PI * 2;
+        
+        // Calculate heart coordinates
+        // We use classic heart parametric equations, adjusted to move clockwise
+        const heartX = scale * Math.pow(Math.sin(angle), 3);
+        // Adjust the heart equation to get a better shape
+        const heartY = -scale * (
+            0.8 * Math.cos(angle) - 
+            0.3 * Math.cos(2 * angle) - 
+            0.15 * Math.cos(3 * angle) - 
+            0.05 * Math.cos(4 * angle)
+        );
+        
+        return {
+            x: CENTER.x + heartX,
+            y: CENTER.y + heartY * 0.8  // Slightly compress vertically
         };
     }
 ];
@@ -506,18 +537,25 @@ function updatePatternIndicator() {
     }
 }
 
-// Add a function to randomly switch patterns
+// Modify the randomSwitchPattern function to prevent switching mid-pattern
 function randomSwitchPattern() {
     if (!gameStarted || gameStatus) return;
     
-    // Generate a random pattern index different from the current one
-    let newPatternIndex;
-    do {
-        newPatternIndex = Math.floor(Math.random() * patterns.length);
-    } while (newPatternIndex === patternIndex);
+    // Save current time position to track pattern completion
+    const currentPatternTime = time % 5000; // Assuming 5000ms is the pattern period
     
-    patternIndex = newPatternIndex;
-    updatePatternIndicator();
+    // Only switch if we're near the beginning or end of a pattern cycle
+    // This prevents interrupting mid-pattern, especially noticeable with the heart
+    if (currentPatternTime < 500 || currentPatternTime > 4500) {
+        // Generate a random pattern index different from the current one
+        let newPatternIndex;
+        do {
+            newPatternIndex = Math.floor(Math.random() * patterns.length);
+        } while (newPatternIndex === patternIndex);
+        
+        patternIndex = newPatternIndex;
+        updatePatternIndicator();
+    }
 }
 
 // Modify the animate function to remove automatic pattern switching
@@ -546,7 +584,7 @@ function updateTimer() {
     }
 }
 
-// Update the startAnimation function to handle clock events
+// Also update the interval-based pattern switching in startAnimation
 function startAnimation() {
     // Create game elements
     const gameArea = document.getElementById('game-area');
@@ -567,15 +605,29 @@ function startAnimation() {
     const randomButton = document.getElementById('random-pattern');
     
     if (randomButton) {
-        randomButton.addEventListener('click', randomSwitchPattern);
+        randomButton.addEventListener('click', () => {
+            // For manual clicks, always switch the pattern regardless of timing
+            let newPatternIndex;
+            do {
+                newPatternIndex = Math.floor(Math.random() * patterns.length);
+            } while (newPatternIndex === patternIndex);
+            
+            patternIndex = newPatternIndex;
+            updatePatternIndicator();
+            
+            // Reset last switch time to prevent immediate auto-switching
+            lastSwitchTime = Date.now();
+        });
         
         // Add a clock-based trigger for random pattern switching
         let lastSwitchTime = Date.now();
-        const clockSwitchInterval = 5000; // Switch every 5 seconds
+        const clockSwitchInterval = 8000; // Increased to 8 seconds for better pattern visibility
         
         setInterval(() => {
             const currentTime = Date.now();
             if (gameStarted && !gameStatus && (currentTime - lastSwitchTime) >= clockSwitchInterval) {
+                // Use the modified randomSwitchPattern for auto-switching
+                // which respects pattern completion
                 randomSwitchPattern();
                 lastSwitchTime = currentTime;
                 
