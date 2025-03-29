@@ -138,8 +138,9 @@ function handleMouseMove(event) {
 }
 
 function handleMouseLeave() {
-    // Empty function to prevent any action when mouse leaves the game area
-    // This keeps the game running when the cursor moves outside the circle
+    if (!isGameActive) {
+        resetGame();
+    }
 }
 
 async function handleClick() {
@@ -176,14 +177,12 @@ let animationFrameId;
 let winningPatternIndex;
 let patternToWatch;
 
-// Add a heart pattern to the patternNames array
 const patternNames = [
     "Circle",
     "Square",
     "Figure-8",
     "Triangle",
-    "Zigzag",
-    "Heart"  // Add the new pattern name
+    "Zigzag"
 ];
 
 // Generate noise patterns
@@ -254,53 +253,30 @@ const patterns = [
         };
     },
     
-    // Triangle pattern with increased speed
+    // Triangle pattern
     (t) => {
-        // Faster triangle pattern with better visibility
-        const period = 2500; // Reduced from 4000 to 2500 for faster movement
+        const period = 3000;
         const normalizedTime = (t % period) / period;
-        
-        // Use equilateral triangle dimensions
-        const side = RADIUS * 1.0;
+        const side = RADIUS * 1.2;
         const height = side * Math.sqrt(3) / 2;
         
-        // Define the three vertices of the triangle
-        const vertices = [
-            { x: CENTER.x, y: CENTER.y - height * 0.6 },           // Top vertex
-            { x: CENTER.x - side/2, y: CENTER.y + height * 0.4 },  // Bottom left
-            { x: CENTER.x + side/2, y: CENTER.y + height * 0.4 }   // Bottom right
-        ];
-        
-        // Function to pause at vertices (slightly shortened pauses)
-        const getSegmentProgress = (progress) => {
-            // Reduced pause time to 20% at vertices instead of 30%
-            if (progress < 0.2) return 0;
-            if (progress > 0.8) return 1;
-            return (progress - 0.2) / 0.6;
-        };
-        
-        // First segment: Top to bottom left
         if (normalizedTime < 0.33) {
-            const segmentProgress = getSegmentProgress(normalizedTime * 3);
+            const progress = normalizedTime * 3;
             return {
-                x: vertices[0].x + (vertices[1].x - vertices[0].x) * segmentProgress,
-                y: vertices[0].y + (vertices[1].y - vertices[0].y) * segmentProgress
+                x: CENTER.x - side/2 + (side * progress),
+                y: CENTER.y + height/3
             };
-        } 
-        // Second segment: Bottom left to bottom right
-        else if (normalizedTime < 0.66) {
-            const segmentProgress = getSegmentProgress((normalizedTime - 0.33) * 3);
+        } else if (normalizedTime < 0.66) {
+            const progress = (normalizedTime - 0.33) * 3;
             return {
-                x: vertices[1].x + (vertices[2].x - vertices[1].x) * segmentProgress,
-                y: vertices[1].y + (vertices[2].y - vertices[1].y) * segmentProgress
+                x: CENTER.x + side/2 - (side/2 * progress),
+                y: CENTER.y + height/3 - (height * progress)
             };
-        } 
-        // Third segment: Bottom right to top
-        else {
-            const segmentProgress = getSegmentProgress((normalizedTime - 0.66) * 3);
+        } else {
+            const progress = (normalizedTime - 0.66) * 3;
             return {
-                x: vertices[2].x + (vertices[0].x - vertices[2].x) * segmentProgress,
-                y: vertices[2].y + (vertices[0].y - vertices[2].y) * segmentProgress
+                x: CENTER.x - (side/2 * (1 - progress)),
+                y: CENTER.y - height * (2/3) + (height * progress)
             };
         }
     },
@@ -312,35 +288,6 @@ const patterns = [
         return {
             x: CENTER.x + Math.sin(t * frequency) * amplitude,
             y: CENTER.y + ((t % (2 * amplitude)) - amplitude)
-        };
-    },
-    
-    // Heart pattern (new)
-    (t) => {
-        const period = 5000; // 5 seconds for a full cycle
-        const normalizedTime = (t % period) / period;
-        const scale = RADIUS * 0.8; // Scale to fit within the game area
-        
-        // Parametric equation for a heart shape
-        // x = 16 * sin(t)^3
-        // y = 13 * cos(t) - 5 * cos(2t) - 2 * cos(3t) - cos(4t)
-        
-        const angle = normalizedTime * Math.PI * 2;
-        
-        // Calculate heart coordinates
-        // We use classic heart parametric equations, adjusted to move clockwise
-        const heartX = scale * Math.pow(Math.sin(angle), 3);
-        // Adjust the heart equation to get a better shape
-        const heartY = -scale * (
-            0.8 * Math.cos(angle) - 
-            0.3 * Math.cos(2 * angle) - 
-            0.15 * Math.cos(3 * angle) - 
-            0.05 * Math.cos(4 * angle)
-        );
-        
-        return {
-            x: CENTER.x + heartX,
-            y: CENTER.y + heartY * 0.8  // Slightly compress vertically
         };
     }
 ];
@@ -403,7 +350,7 @@ async function startGame() {
     const blockchain = new Blockchain();
     blockchain.loadChain(); // Load existing chain first
     blockchain.addScore(5); // Add new score
-    await blockchain.minePendingScores(); // Mine the pending scores
+   // Mine the pending scores
     
     if (!initialized) {
         alert('Failed to initialize verification. Please try again.');
@@ -438,8 +385,11 @@ function handleMouseMove(event) {
 }
 
 function handleMouseLeave() {
-    // Empty function to prevent any action when mouse leaves the game area
-    // This keeps the game running when the cursor moves outside the circle
+    if (!gameStatus) {
+        gameStarted = false;
+        document.getElementById('game-screen').style.display = 'none';
+        document.getElementById('start-screen').style.display = 'block';
+    }
 }
 
 function endGame(status) {
@@ -449,13 +399,14 @@ function endGame(status) {
     const statusElement = document.getElementById('status');
     statusElement.textContent = status === 'won' ? 'Verification Successful ✓' : 'Verification Failed ✗';
     statusElement.className = `status ${status}`;
-    
+    const scoreChain = new Blockchain();
     const gameArea = document.getElementById('game-area');
     gameArea.className = `game-area ${status}`;
 
     if (status === 'lost') {
         setTimeout(() => {
             resetGame();
+            scoreChain.addScore(-5);
         }, 2000);
     } else {
         const playAgainButton = document.createElement('button');
@@ -466,14 +417,14 @@ function endGame(status) {
         statusElement.appendChild(playAgainButton);
 
         // Create blockchain instance and properly handle score updates
-        const scoreChain = new Blockchain();
+        
         scoreChain.loadChain(); // Load existing chain
-        scoreChain.addScore(10, 'Verification successful'); // Add success score
+        // scoreChain.addScore(10, 'Verification successful'); // Add success score
         scoreChain.minePendingScores().then(() => {
             const newTotal = scoreChain.getTotalScore();
-            console.log('Updated Total Score:', newTotal);
-            updateScoreDisplay(newTotal); // Add this function to update UI
         });
+        scoreChain.saveChain();
+        scoreChain.loadChain();
     }
 }
 
@@ -547,53 +498,24 @@ function updatestartextime(){
     }
 }
 
-// Add these functions for pattern navigation
-function nextPattern() {
-    if (!gameStarted || gameStatus) return;
-    patternIndex = (patternIndex + 1) % patterns.length;
-    updatePatternIndicator();
-}
-
-function prevPattern() {
-    if (!gameStarted || gameStatus) return;
-    patternIndex = (patternIndex - 1 + patterns.length) % patterns.length;
-    updatePatternIndicator();
-}
-
-function updatePatternIndicator() {
-    const indicator = document.getElementById('pattern-indicator');
-    if (indicator) {
-        indicator.textContent = `${patternNames[patternIndex]} (${patternIndex + 1}/${patterns.length})`;
+function updateTimer() {
+    const timerElement = document.getElementById('timer');
+    if (timerElement) {
+        timerElement.textContent = `Pattern changes in: ${PATTERN_DURATION - Math.floor((time / 1000) % PATTERN_DURATION)}s`;
     }
+    
 }
 
-// Modify the randomSwitchPattern function to prevent switching mid-pattern
-function randomSwitchPattern() {
-    if (!gameStarted || gameStatus) return;
-    
-    // Save current time position to track pattern completion
-    const currentPatternTime = time % 5000; // Assuming 5000ms is the pattern period
-    
-    // Only switch if we're near the beginning or end of a pattern cycle
-    // This prevents interrupting mid-pattern, especially noticeable with the heart
-    if (currentPatternTime < 500 || currentPatternTime > 4500) {
-        // Generate a random pattern index different from the current one
-        let newPatternIndex;
-        do {
-            newPatternIndex = Math.floor(Math.random() * patterns.length);
-        } while (newPatternIndex === patternIndex);
-        
-        patternIndex = newPatternIndex;
-        updatePatternIndicator();
-    }
-}
-
-// Modify the animate function to remove automatic pattern switching
 function animate(currentTime) {
     if (!gameStarted || gameStatus) return;
 
     const deltaTime = currentTime - (time || currentTime);
     time = currentTime;
+
+    if (Math.floor((time - deltaTime) / (PATTERN_DURATION * 1000)) !== 
+        Math.floor(time / (PATTERN_DURATION * 1000))) {
+        patternIndex = (patternIndex + 1) % patterns.length;
+    }
 
     targetPosition = patterns[patternIndex](time);
     noisePositions = noisePatterns.map(pattern => pattern(time));
@@ -605,16 +527,6 @@ function animate(currentTime) {
     animationFrameId = requestAnimationFrame(animate);
 }
 
-// Modify the updateTimer function since we're not auto-changing patterns
-function updateTimer() {
-    const timerElement = document.getElementById('timer');
-    if (timerElement) {
-        // Change the message since we're not auto-switching patterns anymore
-        timerElement.textContent = `Current pattern: ${patternNames[patternIndex]}`;
-    }
-}
-
-// Also update the interval-based pattern switching in startAnimation
 function startAnimation() {
     // Create game elements
     const gameArea = document.getElementById('game-area');
@@ -631,48 +543,6 @@ function startAnimation() {
     target.className = 'target';
     gameArea.appendChild(target);
 
-    // Set up random pattern button
-    const randomButton = document.getElementById('random-pattern');
-    
-    if (randomButton) {
-        randomButton.addEventListener('click', () => {
-            // For manual clicks, always switch the pattern regardless of timing
-            let newPatternIndex;
-            do {
-                newPatternIndex = Math.floor(Math.random() * patterns.length);
-            } while (newPatternIndex === patternIndex);
-            
-            patternIndex = newPatternIndex;
-            updatePatternIndicator();
-            
-            // Reset last switch time to prevent immediate auto-switching
-            lastSwitchTime = Date.now();
-        });
-        
-        // Add a clock-based trigger for random pattern switching
-        let lastSwitchTime = Date.now();
-        const clockSwitchInterval = 8000; // Increased to 8 seconds for better pattern visibility
-        
-        setInterval(() => {
-            const currentTime = Date.now();
-            if (gameStarted && !gameStatus && (currentTime - lastSwitchTime) >= clockSwitchInterval) {
-                // Use the modified randomSwitchPattern for auto-switching
-                // which respects pattern completion
-                randomSwitchPattern();
-                lastSwitchTime = currentTime;
-                
-                // Add a visual feedback that the button has been "clicked"
-                randomButton.classList.add('active');
-                setTimeout(() => {
-                    randomButton.classList.remove('active');
-                }, 200);
-            }
-        }, 1000); // Check every second if it's time to switch
-    }
-    
-    // Initialize pattern indicator
-    updatePatternIndicator();
-
     // Start animation
     animationFrameId = requestAnimationFrame(animate);
 }
@@ -685,16 +555,17 @@ function changePattern() {
     const currentPattern = patternNames[patternIndex];
     document.getElementById('current-pattern').textContent = currentPattern;
 }
-      // Block class
-      function Block(index, timestamp, data, previousHash) {
+    //   // Block class
+      class Block {
+    constructor(index, timestamp, data, previousHash) {
         this.index = index;
         this.timestamp = timestamp;
-        this.data = data || {score: 0, description: ""};
+        this.data = data || { score: 0, description: "" };
         this.previousHash = previousHash || '';
         this.hash = '';
         this.nonce = 0;
-        
-        this.calculateHash = function() {
+
+        this.calculateHash = function () {
             return CryptoJS.SHA256(
                 this.index +
                 this.previousHash +
@@ -703,29 +574,30 @@ function changePattern() {
                 this.nonce
             ).toString();
         };
-        
-        this.mineBlock = function(difficulty) {
+
+        this.mineBlock = function (difficulty) {
             const startTime = Date.now();
             const target = Array(difficulty + 1).join('0');
-            
+
             while (this.hash.substring(0, difficulty) !== target) {
                 this.nonce++;
                 this.hash = this.calculateHash();
-                
+
                 if (this.nonce % 10000 === 0) {
                     const elapsed = (Date.now() - startTime) / 1000;
-                    document.getElementById('mining-status').textContent = 
+                    document.getElementById('mining-status').textContent =
                         `Mining... Hashes: ${this.nonce.toLocaleString()}, Time: ${elapsed.toFixed(1)}s`;
                 }
             }
-            
+
             const elapsed = (Date.now() - startTime) / 1000;
-            document.getElementById('mining-status').textContent = 
+            document.getElementById('mining-status').textContent =
                 `Block mined in ${elapsed.toFixed(2)}s with nonce ${this.nonce}`;
         };
     }
+}
 
-    // Blockchain class
+    // // Blockchain class
     function Blockchain() {
         // Initialize properties
         this.chain = [];
@@ -827,7 +699,7 @@ function changePattern() {
             let total = 0;
             for (const block of this.chain) {
                 if (block.data && typeof block.data.score !== 'undefined') {
-                    total += parseInt(block.data.score, 10) || 0;
+                    total += parseInt(block.data.score, 5) || 0;
                 }
             }
             return total;
@@ -836,3 +708,5 @@ function changePattern() {
         // Initialize the chain
         this.loadChain();
     }
+
+// Add a new function to update score displ
