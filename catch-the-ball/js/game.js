@@ -138,9 +138,8 @@ function handleMouseMove(event) {
 }
 
 function handleMouseLeave() {
-    if (!isGameActive) {
-        resetGame();
-    }
+    // Empty function to prevent any action when mouse leaves the game area
+    // This keeps the game running when the cursor moves outside the circle
 }
 
 async function handleClick() {
@@ -253,30 +252,53 @@ const patterns = [
         };
     },
     
-    // Triangle pattern
+    // Triangle pattern with increased speed
     (t) => {
-        const period = 3000;
+        // Faster triangle pattern with better visibility
+        const period = 2500; // Reduced from 4000 to 2500 for faster movement
         const normalizedTime = (t % period) / period;
-        const side = RADIUS * 1.2;
+        
+        // Use equilateral triangle dimensions
+        const side = RADIUS * 1.0;
         const height = side * Math.sqrt(3) / 2;
         
+        // Define the three vertices of the triangle
+        const vertices = [
+            { x: CENTER.x, y: CENTER.y - height * 0.6 },           // Top vertex
+            { x: CENTER.x - side/2, y: CENTER.y + height * 0.4 },  // Bottom left
+            { x: CENTER.x + side/2, y: CENTER.y + height * 0.4 }   // Bottom right
+        ];
+        
+        // Function to pause at vertices (slightly shortened pauses)
+        const getSegmentProgress = (progress) => {
+            // Reduced pause time to 20% at vertices instead of 30%
+            if (progress < 0.2) return 0;
+            if (progress > 0.8) return 1;
+            return (progress - 0.2) / 0.6;
+        };
+        
+        // First segment: Top to bottom left
         if (normalizedTime < 0.33) {
-            const progress = normalizedTime * 3;
+            const segmentProgress = getSegmentProgress(normalizedTime * 3);
             return {
-                x: CENTER.x - side/2 + (side * progress),
-                y: CENTER.y + height/3
+                x: vertices[0].x + (vertices[1].x - vertices[0].x) * segmentProgress,
+                y: vertices[0].y + (vertices[1].y - vertices[0].y) * segmentProgress
             };
-        } else if (normalizedTime < 0.66) {
-            const progress = (normalizedTime - 0.33) * 3;
+        } 
+        // Second segment: Bottom left to bottom right
+        else if (normalizedTime < 0.66) {
+            const segmentProgress = getSegmentProgress((normalizedTime - 0.33) * 3);
             return {
-                x: CENTER.x + side/2 - (side/2 * progress),
-                y: CENTER.y + height/3 - (height * progress)
+                x: vertices[1].x + (vertices[2].x - vertices[1].x) * segmentProgress,
+                y: vertices[1].y + (vertices[2].y - vertices[1].y) * segmentProgress
             };
-        } else {
-            const progress = (normalizedTime - 0.66) * 3;
+        } 
+        // Third segment: Bottom right to top
+        else {
+            const segmentProgress = getSegmentProgress((normalizedTime - 0.66) * 3);
             return {
-                x: CENTER.x - (side/2 * (1 - progress)),
-                y: CENTER.y - height * (2/3) + (height * progress)
+                x: vertices[2].x + (vertices[0].x - vertices[2].x) * segmentProgress,
+                y: vertices[2].y + (vertices[0].y - vertices[2].y) * segmentProgress
             };
         }
     },
@@ -385,11 +407,8 @@ function handleMouseMove(event) {
 }
 
 function handleMouseLeave() {
-    if (!gameStatus) {
-        gameStarted = false;
-        document.getElementById('game-screen').style.display = 'none';
-        document.getElementById('start-screen').style.display = 'block';
-    }
+    // Empty function to prevent any action when mouse leaves the game area
+    // This keeps the game running when the cursor moves outside the circle
 }
 
 function endGame(status) {
@@ -497,24 +516,46 @@ function updatestartextime(){
     }
 }
 
-function updateTimer() {
-    const timerElement = document.getElementById('timer');
-    if (timerElement) {
-        timerElement.textContent = `Pattern changes in: ${PATTERN_DURATION - Math.floor((time / 1000) % PATTERN_DURATION)}s`;
-    }
-    
+// Add these functions for pattern navigation
+function nextPattern() {
+    if (!gameStarted || gameStatus) return;
+    patternIndex = (patternIndex + 1) % patterns.length;
+    updatePatternIndicator();
 }
 
+function prevPattern() {
+    if (!gameStarted || gameStatus) return;
+    patternIndex = (patternIndex - 1 + patterns.length) % patterns.length;
+    updatePatternIndicator();
+}
+
+function updatePatternIndicator() {
+    const indicator = document.getElementById('pattern-indicator');
+    if (indicator) {
+        indicator.textContent = `${patternNames[patternIndex]} (${patternIndex + 1}/${patterns.length})`;
+    }
+}
+
+// Add a function to randomly switch patterns
+function randomSwitchPattern() {
+    if (!gameStarted || gameStatus) return;
+    
+    // Generate a random pattern index different from the current one
+    let newPatternIndex;
+    do {
+        newPatternIndex = Math.floor(Math.random() * patterns.length);
+    } while (newPatternIndex === patternIndex);
+    
+    patternIndex = newPatternIndex;
+    updatePatternIndicator();
+}
+
+// Modify the animate function to remove automatic pattern switching
 function animate(currentTime) {
     if (!gameStarted || gameStatus) return;
 
     const deltaTime = currentTime - (time || currentTime);
     time = currentTime;
-
-    if (Math.floor((time - deltaTime) / (PATTERN_DURATION * 1000)) !== 
-        Math.floor(time / (PATTERN_DURATION * 1000))) {
-        patternIndex = (patternIndex + 1) % patterns.length;
-    }
 
     targetPosition = patterns[patternIndex](time);
     noisePositions = noisePatterns.map(pattern => pattern(time));
@@ -526,6 +567,16 @@ function animate(currentTime) {
     animationFrameId = requestAnimationFrame(animate);
 }
 
+// Modify the updateTimer function since we're not auto-changing patterns
+function updateTimer() {
+    const timerElement = document.getElementById('timer');
+    if (timerElement) {
+        // Change the message since we're not auto-switching patterns anymore
+        timerElement.textContent = `Current pattern: ${patternNames[patternIndex]}`;
+    }
+}
+
+// Update the startAnimation function to handle clock events
 function startAnimation() {
     // Create game elements
     const gameArea = document.getElementById('game-area');
@@ -541,6 +592,34 @@ function startAnimation() {
     target.id = 'target';
     target.className = 'target';
     gameArea.appendChild(target);
+
+    // Set up random pattern button
+    const randomButton = document.getElementById('random-pattern');
+    
+    if (randomButton) {
+        randomButton.addEventListener('click', randomSwitchPattern);
+        
+        // Add a clock-based trigger for random pattern switching
+        let lastSwitchTime = Date.now();
+        const clockSwitchInterval = 5000; // Switch every 5 seconds
+        
+        setInterval(() => {
+            const currentTime = Date.now();
+            if (gameStarted && !gameStatus && (currentTime - lastSwitchTime) >= clockSwitchInterval) {
+                randomSwitchPattern();
+                lastSwitchTime = currentTime;
+                
+                // Add a visual feedback that the button has been "clicked"
+                randomButton.classList.add('active');
+                setTimeout(() => {
+                    randomButton.classList.remove('active');
+                }, 200);
+            }
+        }, 1000); // Check every second if it's time to switch
+    }
+    
+    // Initialize pattern indicator
+    updatePatternIndicator();
 
     // Start animation
     animationFrameId = requestAnimationFrame(animate);
