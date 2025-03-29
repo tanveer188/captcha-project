@@ -1,0 +1,29 @@
+{
+  "chain": [
+    {
+      "index": 0,
+      "timestamp": 1743250116.0461407,
+      "data": {
+        "scores": {}
+      },
+      "previous_hash": "0",
+      "nonce": 0,
+      "hash": "320768f238ceb864ca210224699e8c87f1f21936974dfbc1fb104aa46e94a6ff"
+    },
+    {
+      "index": 1,
+      "timestamp": 1743250175.2726336,
+      "data": {
+        "scores": {
+          "2": 2
+        }
+      },
+      "previous_hash": "320768f238ceb864ca210224699e8c87f1f21936974dfbc1fb104aa46e94a6ff",
+      "nonce": 0,
+      "hash": "ea8d689f14e7d616675c6ef0585303f715c72361ee5bba4e86b3d6e2728f8437"
+    }
+  ],
+  "scores": {
+    "2": 2
+  }
+}
