@@ -97,16 +97,31 @@ function stopGame() {
 }
 
 async function startGame() {
-    const data = await initializeCaptcha();
-    if (!data) return;
-
-    messageElement.textContent = 'Watch the pattern and select it below!';
-    messageElement.style.color = '#ffffff';
-    playAgainButton.style.display = 'none';
+    const initialized = await initializeCaptcha();
+    const blockchain = new Blockchain();
+    blockchain.loadChain(); // Load existing chain first
+    blockchain.addScore(5); // Add new score
+    await blockchain.minePendingScores(); // Mine the pending scores
     
-    isGameActive = true;
-    gameStartTime = Date.now();
-    updateBallPosition();
+    if (!initialized) {
+        alert('Failed to initialize verification. Please try again.');
+        return;
+    }
+
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('game-screen').style.display = 'block';
+    gameStarted = true;
+    gameStatus = null;
+    time = 0;
+    patternIndex = 0;
+    startAnimation();
+
+    // Check total score after mining
+    const totalScore = blockchain.getTotalScore();
+    console.log('Current total score:', totalScore);
+    if (totalScore >= 50) {
+        endGame('won');
+    }
 }
 
 function resetGame() {
@@ -127,9 +142,15 @@ function handleMouseLeave() {
     // This keeps the game running when the cursor moves outside the circle
 }
 
-function handleClick() {
-    if (!isGameActive) return;
-    verifyCaptcha(0);
+async function handleClick() {
+    if (!gameStarted || gameStatus) return;
+    const result = await verifyCaptcha(patternIndex);
+    if (result.success) {
+        captchaToken = result.newToken;
+        endGame('won');
+    } else {
+        endGame('lost');
+    }
 }
 
 // Game constants
@@ -378,8 +399,12 @@ async function verifyCaptcha(patternIndex) {
 }
 
 async function startGame() {
-
     const initialized = await initializeCaptcha();
+    const blockchain = new Blockchain();
+    blockchain.loadChain(); // Load existing chain first
+    blockchain.addScore(5); // Add new score
+    await blockchain.minePendingScores(); // Mine the pending scores
+    
     if (!initialized) {
         alert('Failed to initialize verification. Please try again.');
         return;
@@ -392,17 +417,12 @@ async function startGame() {
     time = 0;
     patternIndex = 0;
     startAnimation();
-}
 
-async function handleClick() {
-    if (!gameStarted || gameStatus) return;
-    
-    const result = await verifyCaptcha(patternIndex);
-    if (result.success) {
-        captchaToken = result.newToken;
+    // Check total score after mining
+    const totalScore = blockchain.getTotalScore();
+    console.log('Current total score:', totalScore);
+    if (totalScore >= 50) {
         endGame('won');
-    } else {
-        endGame('lost');
     }
 }
 
@@ -444,6 +464,16 @@ function endGame(status) {
         playAgainButton.onclick = resetGame;
         statusElement.appendChild(document.createElement('br'));
         statusElement.appendChild(playAgainButton);
+
+        // Create blockchain instance and properly handle score updates
+        const scoreChain = new Blockchain();
+        scoreChain.loadChain(); // Load existing chain
+        scoreChain.addScore(10, 'Verification successful'); // Add success score
+        scoreChain.minePendingScores().then(() => {
+            const newTotal = scoreChain.getTotalScore();
+            console.log('Updated Total Score:', newTotal);
+            updateScoreDisplay(newTotal); // Add this function to update UI
+        });
     }
 }
 
@@ -646,3 +676,163 @@ function startAnimation() {
     // Start animation
     animationFrameId = requestAnimationFrame(animate);
 }
+// Add this after the other game functions
+function changePattern() {
+    if (!gameStarted || gameStatus) return;
+    patternIndex = (patternIndex + 1) % patterns.length;
+    
+    // Update the displayed pattern name
+    const currentPattern = patternNames[patternIndex];
+    document.getElementById('current-pattern').textContent = currentPattern;
+}
+      // Block class
+      function Block(index, timestamp, data, previousHash) {
+        this.index = index;
+        this.timestamp = timestamp;
+        this.data = data || {score: 0, description: ""};
+        this.previousHash = previousHash || '';
+        this.hash = '';
+        this.nonce = 0;
+        
+        this.calculateHash = function() {
+            return CryptoJS.SHA256(
+                this.index +
+                this.previousHash +
+                this.timestamp +
+                JSON.stringify(this.data) +
+                this.nonce
+            ).toString();
+        };
+        
+        this.mineBlock = function(difficulty) {
+            const startTime = Date.now();
+            const target = Array(difficulty + 1).join('0');
+            
+            while (this.hash.substring(0, difficulty) !== target) {
+                this.nonce++;
+                this.hash = this.calculateHash();
+                
+                if (this.nonce % 10000 === 0) {
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    document.getElementById('mining-status').textContent = 
+                        `Mining... Hashes: ${this.nonce.toLocaleString()}, Time: ${elapsed.toFixed(1)}s`;
+                }
+            }
+            
+            const elapsed = (Date.now() - startTime) / 1000;
+            document.getElementById('mining-status').textContent = 
+                `Block mined in ${elapsed.toFixed(2)}s with nonce ${this.nonce}`;
+        };
+    }
+
+    // Blockchain class
+    function Blockchain() {
+        // Initialize properties
+        this.chain = [];
+        this.difficulty = 4;
+        this.pendingScores = [];
+        
+        // Method definitions
+        this.createGenesisBlock = function() {
+            return new Block(0, Date.now(), {score: 0, description: "Genesis Block"}, '0');
+        };
+        
+        this.getLatestBlock = function() {
+            return this.chain[this.chain.length - 1];
+        };
+        
+        this.addScore = function(newScore, description) {
+            this.pendingScores.push({
+                score: newScore,
+                description: description || `Score added at ${new Date().toLocaleString()}`
+            });
+        };
+        
+        this.minePendingScores = function() {
+            if (this.pendingScores.length === 0) {
+                return Promise.resolve();
+            }
+            
+            const minePromises = [];
+            
+            for (const scoreData of this.pendingScores) {
+                const newBlock = new Block(
+                    this.chain.length,
+                    Date.now(),
+                    scoreData,
+                    this.getLatestBlock().hash
+                );
+                
+                minePromises.push(new Promise(resolve => {
+                    setTimeout(() => {
+                        newBlock.mineBlock(this.difficulty);
+                        this.chain.push(newBlock);
+                        resolve();
+                    }, 0);
+                }));
+            }
+            
+            return Promise.all(minePromises).then(() => {
+                this.pendingScores = [];
+                this.saveChain();
+            });
+        };
+        
+        this.saveChain = function() {
+            localStorage.setItem('scoreChain', JSON.stringify(this.chain));
+        };
+        
+        this.loadChain = function() {
+            const savedChain = localStorage.getItem('scoreChain');
+            if (savedChain) {
+                try {
+                    const parsedChain = JSON.parse(savedChain);
+                    this.chain = parsedChain.map(blockData => {
+                        const block = new Block(
+                            blockData.index,
+                            blockData.timestamp,
+                            blockData.data,
+                            blockData.previousHash
+                        );
+                        block.hash = blockData.hash;
+                        block.nonce = blockData.nonce;
+                        return block;
+                    });
+                } catch (e) {
+                    console.error('Error loading chain:', e);
+                    this.chain = [this.createGenesisBlock()];
+                }
+            } else {
+                this.chain = [this.createGenesisBlock()];
+            }
+        };
+        
+        this.isChainValid = function() {
+            for (let i = 1; i < this.chain.length; i++) {
+                const currentBlock = this.chain[i];
+                const previousBlock = this.chain[i - 1];
+                
+                if (currentBlock.hash !== currentBlock.calculateHash()) {
+                    return false;
+                }
+                
+                if (currentBlock.previousHash !== previousBlock.hash) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        
+        this.getTotalScore = function() {
+            let total = 0;
+            for (const block of this.chain) {
+                if (block.data && typeof block.data.score !== 'undefined') {
+                    total += parseInt(block.data.score, 10) || 0;
+                }
+            }
+            return total;
+        };
+        
+        // Initialize the chain
+        this.loadChain();
+    }
