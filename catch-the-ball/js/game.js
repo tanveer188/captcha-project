@@ -143,15 +143,18 @@ function handleMouseLeave() {
     }
 }
 
-async function handleClick() {
-    if (!gameStarted || gameStatus) return;
-    const result = await verifyCaptcha(patternIndex);
-    if (result.success) {
-        captchaToken = result.newToken;
-        endGame('won');
-    } else {
-        endGame('lost');
+// Update the click event handler
+function handleClick(event) {
+    // Check if click was on pattern control button
+    if (event.target.id === 'random-pattern') {
+        event.stopPropagation(); // Prevent game area click
+        changePattern();
+        return;
     }
+
+    // Handle regular game area click
+    if (!gameStarted || gameStatus) return;
+    verifyCaptcha(patternIndex);
 }
 
 // Game constants
@@ -529,15 +532,35 @@ function startAnimation() {
 // Add this after the other game functions
 function changePattern() {
     if (!gameStarted || gameStatus) return;
+
+    // Update pattern index
     patternIndex = (patternIndex + 1) % patterns.length;
     
-    // Update the displayed pattern name
-    const currentPattern = patternNames[patternIndex];
-    document.getElementById('current-pattern').textContent = currentPattern;
+    // Add visual feedback for pattern change
+    const button = document.getElementById('random-pattern');
+    button.classList.add('active');
+    
+    // Update pattern name display
+    document.getElementById('pattern-indicator').textContent = patternNames[patternIndex];
+    
+    // Reset animation timer
+    time = 0;
+    
+    // Add rotation animation to target
+    const target = document.getElementById('target');
+    if (target) {
+        target.style.transition = 'transform 0.3s ease-out';
+        target.style.transform = 'scale(1.2) rotate(360deg)';
+        setTimeout(() => {
+            target.style.transform = 'scale(1) rotate(0deg)';
+        }, 300);
+    }
+    
+    // Remove active class after animation
+    setTimeout(() => {
+        button.classList.remove('active');
+    }, 300);
 }
-    //   // Block class
-
-
 class Block {
     constructor(index, timestamp, data, previousHash) {
         this.index = index;
@@ -706,45 +729,45 @@ class Block {
         this.loadChain();
     }
 
-// Add a new function to update score display
-function displayBlockchainData() {
-    const blockchain = new Blockchain();
-    blockchain.loadChain();
+// // Add a new function to update score display
+// function displayBlockchainData() {
+//     const blockchain = new Blockchain();
+//     blockchain.loadChain();
     
-    // Create or get the display container
-    let displayDiv = document.getElementById('blockchain-display');
-    if (!displayDiv) {
-        displayDiv = document.createElement('div');
-        displayDiv.id = 'blockchain-display';
-        document.querySelector('.game-container').appendChild(displayDiv);
-    }
+//     // Create or get the display container
+//     let displayDiv = document.getElementById('blockchain-display');
+//     if (!displayDiv) {
+//         displayDiv = document.createElement('div');
+//         displayDiv.id = 'blockchain-display';
+//         document.querySelector('.game-container').appendChild(displayDiv);
+//     }
     
-    // Clear previous content
-    displayDiv.innerHTML = `
-        <h3>Blockchain Data</h3>
-        <div class="chain-info">
-            <p>Total Score: ${blockchain.getTotalScore()}</p>
-            <p>Chain Length: ${blockchain.chain.length}</p>
-            <p>Pending Scores: ${blockchain.pendingScores.length}</p>
-            <p>Mining Difficulty: ${blockchain.difficulty}</p>
-        </div>
-        <div class="blocks-container"></div>
-    `;
+//     // Clear previous content
+//     displayDiv.innerHTML = `
+//         <h3>Blockchain Data</h3>
+//         <div class="chain-info">
+//             <p>Total Score: ${blockchain.getTotalScore()}</p>
+//             <p>Chain Length: ${blockchain.chain.length}</p>
+//             <p>Pending Scores: ${blockchain.pendingScores.length}</p>
+//             <p>Mining Difficulty: ${blockchain.difficulty}</p>
+//         </div>
+//         <div class="blocks-container"></div>
+//     `;
 
-    // Add each block's data
-    const blocksContainer = displayDiv.querySelector('.blocks-container');
-    blockchain.chain.forEach((block, index) => {
-        const blockDiv = document.createElement('div');
-        blockDiv.className = 'block-data';
-        blockDiv.innerHTML = `
-            <h4>Block #${block.index}</h4>
-            <p>Timestamp: ${new Date(block.timestamp).toLocaleString()}</p>
-            <p>Score: ${block.data.score}</p>
-            <p>Description: ${block.data.description}</p>
-            <p>Hash: ${block.hash.substring(0, 20)}...</p>
-            <p>Previous Hash: ${block.previousHash.substring(0, 20)}...</p>
-            <p>Nonce: ${block.nonce}</p>
-        `;
-        blocksContainer.appendChild(blockDiv);
-    });
-}
+//     // Add each block's data
+//     const blocksContainer = displayDiv.querySelector('.blocks-container');
+//     blockchain.chain.forEach((block, index) => {
+//         const blockDiv = document.createElement('div');
+//         blockDiv.className = 'block-data';
+//         blockDiv.innerHTML = `
+//             <h4>Block #${block.index}</h4>
+//             <p>Timestamp: ${new Date(block.timestamp).toLocaleString()}</p>
+//             <p>Score: ${block.data.score}</p>
+//             <p>Description: ${block.data.description}</p>
+//             <p>Hash: ${block.hash.substring(0, 20)}...</p>
+//             <p>Previous Hash: ${block.previousHash.substring(0, 20)}...</p>
+//             <p>Nonce: ${block.nonce}</p>
+//         `;
+//         blocksContainer.appendChild(blockDiv);
+//     });
+// }
