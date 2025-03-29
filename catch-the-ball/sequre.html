@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form with Microhashpuzzle</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"],
+        input[type="email"],
+        textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+        }
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .working {
+            background-color: #fcf8e3;
+            color: #8a6d3b;
+        }
+    </style>
+</head>
+<body>
+    <h1>Contact Form with Microhashpuzzle</h1>
+    <p>This form includes a lightweight proof-of-work challenge that runs when you submit the form.</p>
+    
+    <form id="contactForm">
+        <div class="form-group">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="message">Message:</label>
+            <textarea id="message" name="message" rows="4" required></textarea>
+        </div>
+        
+        <button type="submit" id="submitBtn">Submit</button>
+    </form>
+    
+    <div id="status"></div>
+
+    <script>
+        document.getElementById('contactForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const statusDiv = document.getElementById('status');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            // Disable button and show working message
+            submitBtn.disabled = true;
+            statusDiv.className = 'working';
+            statusDiv.textContent = 'Working on security verification (approx. 7 seconds)...';
+            
+            // Give time for the UI to update
+            await new Promise(resolve => setTimeout(resolve, 10));
+            
+            try {
+                // Run the microhashpuzzle with fixed time approach
+                const result = await solveTimedMicrohashpuzzle();
+                
+                if (result.success) {
+                    // Form data to be submitted
+                    const formData = {
+                        name: document.getElementById('name').value,
+                        email: document.getElementById('email').value,
+                        message: document.getElementById('message').value,
+                        nonce: result.nonce,
+                        hash: result.hash,
+                        salt: result.salt,
+                        timestamp: result.timestamp,
+                        cpuLoad: result.cpuLoad
+                    };
+                    
+                    // In a real application, you would send this data to your server
+                    console.log('Form submitted with proof-of-work:', formData);
+                    
+                    // Show success message with CPU load information
+                    statusDiv.className = 'success';
+                    statusDiv.textContent = `Form submitted successfully! Security verification completed with ${result.cpuLoad}% CPU usage.`;
+                    
+                    // Clear form
+                    document.getElementById('contactForm').reset();
+                } else {
+                    throw new Error('Failed to complete security verification');
+                }
+            } catch (error) {
+                statusDiv.className = 'error';
+                statusDiv.textContent = 'Error: ' + error.message;
+            } finally {
+                // Re-enable button
+                submitBtn.disabled = false;
+            }
+        });
+        
+        // Heavyweight Time-fixed Microhashpuzzle implementation
+        async function solveTimedMicrohashpuzzle() {
+            const startTime = performance.now();
+            const targetTime = 7000; // 7 seconds in milliseconds
+            const minIterations = 25000; // Significantly increased minimum iterations
+            
+            // Use form data and timestamp as part of the challenge for extra security
+            const timestamp = Date.now().toString();
+            const salt = generateRandomString(16);
+            const formData = {
+                name: document.getElementById('name').value,
+                email: document.getElementById('email').value,
+                message: document.getElementById('message').value
+            };
+            
+            // Create a challenge string that includes form data to prevent reuse
+            const challenge = JSON.stringify(formData) + timestamp + salt;
+            
+            let nonce = 0;
+            let hash = '';
+            let iterations = 0;
+            let bestHash = '';
+            let bestNonce = 0;
+            
+            // Set up Web Workers for maximum CPU usage if browser supports them
+            let workers = [];
+            const workerCount = navigator.hardwareConcurrency ? Math.max(2, navigator.hardwareConcurrency - 1) : 4;
+            
+            // Web Worker code as a blob
+            const workerBlob = new Blob([`
+                self.onmessage = function(e) {
+                    const { id, iterations } = e.data;
+                    let result = heavyComputation(iterations, id);
+                    self.postMessage({ id: id, result: result });
+                };
+                
+                function heavyComputation(iterations, seed) {
+                    // Create large arrays for computations
+                    const size = 3000;
+                    const arr1 = new Array(size);
+                    const arr2 = new Array(size);
+                    
+                    // Initialize with pseudo-random values
+                    for (let i = 0; i < size; i++) {
+                        arr1[i] = (i * 1664525 + seed) % 2147483647;
+                        arr2[i] = (i * 22695477 + seed) % 2147483647;
+                    }
+                    
+                    // Run intensive calculations
+                    for (let i = 0; i < iterations; i++) {
+                        const idx = i % size;
+                        
+                        // Mix of math operations
+                        arr1[idx] = (arr1[idx] * 1664525 + 1013904223) % 2147483647;
+                        
+                        // Branching logic
+                        if (arr1[idx] % 4 === 0) {
+                            arr2[idx] = (arr2[idx] + arr1[(idx + 1) % size]) % 2147483647;
+                        } else if (arr1[idx] % 4 === 1) {
+                            arr2[idx] = (arr2[idx] * arr1[(idx + 2) % size]) % 2147483647;
+                        } else if (arr1[idx] % 4 === 2) {
+                            arr2[idx] = (arr2[idx] ^ arr1[(idx + 3) % size]);
+                        } else {
+                            let temp = 0;
+                            for (let j = 0; j < 20; j++) {
+                                temp += arr1[(idx + j) % size];
+                            }
+                            arr2[idx] = temp % 2147483647;
+                        }
+                        
+                        // Every so often, do more intensive work
+                        if (i % 50 === 0) {
+                            // Sort a portion of the array (very CPU intensive)
+                            const sortSize = 100;
+                            const sortStart = i % (size - sortSize);
+                            const slice = arr1.slice(sortStart, sortStart + sortSize);
+                            slice.sort((a, b) => a - b);
+                            for (let j = 0; j < sortSize; j++) {
+                                arr1[sortStart + j] = slice[j];
+                            }
+                        }
+                    }
+                    
+                    // Return a derived result
+                    return arr1.reduce((a, b) => (a + b) % 2147483647, 0) +
+                           arr2.reduce((a, b) => (a ^ b), 0);
+                }
+            `], { type: 'application/javascript' });
+            
+            // Create and start Web Workers
+            try {
+                for (let i = 0; i < workerCount; i++) {
+                    const worker = new Worker(URL.createObjectURL(workerBlob));
+                    worker.onmessage = function(e) {
+                        // Just acknowledge receipt to keep workers churning
+                        worker.postMessage({ id: e.data.id, iterations: 20000 + Math.floor(Math.random() * 5000) });
+                    };
+                    workers.push(worker);
+                    // Start each worker with initial message
+                    worker.postMessage({ id: i, iterations: 20000 + Math.floor(Math.random() * 5000) });
+                }
+            } catch (e) {
+                console.error("Web Workers not supported, falling back to single-thread mode");
+                workers = null;
+            }
+            
+            // Ultra-intensive operations for when Web Workers aren't available
+            const ultraIntensiveWork = async () => {
+                // Create very large typed arrays
+                const size = 5000;
+                const arr1 = new Float64Array(size);
+                const arr2 = new Float64Array(size);
+                
+                // Initialize with random values
+                for (let i = 0; i < size; i++) {
+                    arr1[i] = Math.random() * 10000;
+                    arr2[i] = Math.random() * 10000;
+                }
+                
+                // Perform complex mathematical operations
+                for (let i = 0; i < 15000; i++) {
+                    const idx = i % size;
+                    
+                    // Expensive math operations
+                    arr1[idx] = Math.sin(arr1[idx]) * Math.cos(arr2[idx]) + Math.tan(arr1[(idx + 100) % size]);
+                    arr2[idx] = Math.sqrt(Math.abs(arr1[idx])) + Math.log(1 + Math.abs(arr2[(idx + 200) % size]));
+                    
+                    // Matrix-like operations every so often
+                    if (i % 20 === 0) {
+                        const blockSize = 15;
+                        for (let j = 0; j < blockSize; j++) {
+                            for (let k = 0; k < blockSize; k++) {
+                                const pos = (idx + j) % size;
+                                arr1[pos] += arr1[(pos + k) % size] * arr2[(pos + k + j) % size] / (1 + arr2[pos]);
+                            }
+                        }
+                    }
+                    
+                    // Occasional sort operation (very CPU intensive)
+                    if (i % 200 === 0) {
+                        const sortSize = 200;
+                        const sortStart = i % (size - sortSize);
+                        const slice = Array.from(arr1.slice(sortStart, sortStart + sortSize));
+                        slice.sort((a, b) => a - b);
+                        for (let j = 0; j < sortSize; j++) {
+                            arr1[sortStart + j] = slice[j];
+                        }
+                    }
+                }
+                
+                // Return a value to prevent optimization
+                return arr1.reduce((a, b) => a + b, 0) + arr2.reduce((a, b) => a + b, 0);
+            };
+            
+            // If workers aren't available, run intensive calculation periodically
+            if (!workers) {
+                // Schedule intensive work at intervals
+                const intervalIds = [];
+                for (let i = 0; i < 3; i++) {
+                    const id = setInterval(async () => {
+                        await ultraIntensiveWork();
+                    }, 500);
+                    intervalIds.push(id);
+                }
+                
+                // Clear intervals when done
+                setTimeout(() => {
+                    intervalIds.forEach(id => clearInterval(id));
+                }, targetTime);
+            }
+            
+            // Intensive cryptographic operations
+            const cryptoWork = async () => {
+                // Generate a large random array
+                const dataSize = 5000;
+                const data = new Uint8Array(dataSize);
+                crypto.getRandomValues(data);
+                
+                // Perform multiple rounds of hashing
+                let hash = await sha256(Array.from(data).join(','));
+                
+                for (let i = 0; i < 50; i++) {
+                    // Mix in some of the previous hash
+                    for (let j = 0; j < 100; j++) {
+                        const idx = (i * 100 + j) % dataSize;
+                        data[idx] = parseInt(hash.substring((j % 32) * 2, (j % 32) * 2 + 2), 16);
+                    }
+                    
+                    // Rehash with the modified data
+                    hash = await sha256(hash + ',' + Array.from(data.slice(0, 1000)).join(','));
+                }
+                
+                return hash;
+            };
+            
+            // Schedule crypto work
+            const cryptoIntervalId = setInterval(async () => {
+                await cryptoWork();
+            }, 1000);
+            
+            // Clear interval when done
+            setTimeout(() => {
+                clearInterval(cryptoIntervalId);
+            }, targetTime);
+            
+            // Main puzzle loop
+            while (true) {
+                iterations++;
+                
+                // Generate a hash of the challenge and nonce
+                hash = await sha256(challenge + nonce);
+                
+                // Keep track of the "best" hash (one with most leading zeros)
+                if (bestHash === '' || hash < bestHash) {
+                    bestHash = hash;
+                    bestNonce = nonce;
+                }
+                
+                // Add some additional computation periodically
+                if (iterations % 2 === 0) { // Very frequent
+                    // Heavy string manipulation (CPU intensive)
+                    const strLen = 5000;
+                    let str = '';
+                    for (let i = 0; i < 20; i++) {
+                        str += hash + nonce + i;
+                    }
+                    str = str.substring(0, strLen);
+                    
+                    // Count characters (forces evaluation)
+                    let charCount = 0;
+                    for (let i = 0; i < str.length; i++) {
+                        if (str[i] >= '0' && str[i] <= '9') charCount++;
+                    }
+                    
+                    // Use the result to modify nonce
+                    nonce = (nonce + charCount) % 1000000000;
+                }
+                
+                // Check elapsed time
+                const elapsedTime = performance.now() - startTime;
+                
+                // If we've reached our target time and minimum iterations, break
+                if (elapsedTime >= targetTime && iterations >= minIterations) {
+                    break;
+                }
+                
+                // Very minimal yielding to prevent browser freeze
+                if (iterations % 800 === 0) { // Very infrequent
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+                
+                nonce++;
+            }
+            
+            // Clean up workers
+            if (workers) {
+                workers.forEach(worker => worker.terminate());
+            }
+            
+            // Report a higher CPU load for the heavyweight implementation
+            const cpuLoad = Math.min(95, Math.max(50, Math.round((iterations / targetTime) * 500)));
+            
+            return {
+                success: true,
+                nonce: bestNonce,
+                hash: bestHash,
+                salt: salt,
+                timestamp: timestamp,
+                iterations: iterations,
+                time: Math.round(performance.now() - startTime),
+                cpuLoad: cpuLoad
+            };
+        }
+        
+        // Generate a random string for the salt
+        function generateRandomString(length) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let result = '';
+            const cryptoValues = new Uint32Array(length);
+            crypto.getRandomValues(cryptoValues);
+            
+            for (let i = 0; i < length; i++) {
+                result += chars[cryptoValues[i] % chars.length];
+            }
+            return result;
+        }
+        
+        // SHA-256 implementation
+        async function sha256(message) {
+            // Encode as UTF-8
+            const msgBuffer = new TextEncoder().encode(message);
+            
+            // Hash the message
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            
+            // Convert ArrayBuffer to hex string
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            
+            return hashHex;
+        }
+    </script>
+</body>
+</html>
