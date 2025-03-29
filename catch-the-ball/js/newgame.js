@@ -140,7 +140,7 @@ const BALL_SIZE = 24;
 const TARGET_SIZE = 28;
 const NOISE_SIZE = 16;
 const PATTERN_DURATION = 5;
-const SPEED_MULTIPLIER = 3
+const SPEED_MULTIPLIER = 2;
 const FIGURE_8_PATTERN_INDEX = 2;
 const NUM_NOISE_CIRCLES = 8;
 
@@ -167,8 +167,8 @@ const patternNames = [
 // Generate noise patterns
 function generateNoisePatterns() {
     return Array(NUM_NOISE_CIRCLES).fill(null).map(() => {
-        const speed = 0.003 + Math.random() * 0.004;
-        const radius = RADIUS * (0.3 + Math.random() * 0.3);
+        const speed = 0.003 + Math.random() * 0.002;
+        const radius = RADIUS * (0.3 + Math.random() * 0.5);
         const phase = Math.random() * Math.PI * 2;
         const centerOffset = {
             x: (Math.random() - 0.5) * RADIUS * 0.5,
@@ -200,6 +200,7 @@ const patterns = [
         const period = 4000;
         const normalizedTime = (t % period) / period;
         const side = RADIUS * 1.2;
+        
         if (normalizedTime < 0.25) {
             return {
                 x: CENTER.x - side/2 + (side * normalizedTime * 4),
@@ -325,7 +326,6 @@ async function verifyCaptcha(patternIndex) {
 }
 
 async function startGame() {
-
     const initialized = await initializeCaptcha();
     if (!initialized) {
         alert('Failed to initialize verification. Please try again.');
@@ -413,7 +413,6 @@ function resetGame() {
             time = 0;
             patternIndex = 0;
             startAnimation();
-            updatestartextime();
         } else {
             alert('Failed to initialize verification. Please try again.');
         }
@@ -441,30 +440,14 @@ function updateNoiseCircles() {
     const gameArea = document.getElementById('game-area');
     const existingNoise = document.querySelectorAll('.noise-circle');
     existingNoise.forEach(el => el.remove());
-    const colors = ['#ee6352', '#08b2e3', '#efe9f4', '#73D997', '#484d6d', '#BEA7E5', '#9B59B6', '#ee6352'];
 
-    noisePositions.forEach((pos, index) => {
+    noisePositions.forEach(pos => {
         const noise = document.createElement('div');
         noise.className = 'noise-circle';
-        noise.style.transition = 'all 2s ease-out';
         noise.style.left = `${pos.x - NOISE_SIZE / 2}px`;
         noise.style.top = `${pos.y - NOISE_SIZE / 2}px`;
-        // Use time to cycle through colors
-        const colorIndex = (index + Math.floor(time/500)) % colors.length;
-        noise.style.backgroundColor = colors[colorIndex];
         gameArea.appendChild(noise);
     });
-}
-function updatestartextime(){
-    const timerElement = document.getElementById('exp_time');  
-    if (!timerElement) return;
-    
-    const remainingTime = 35 - Math.floor((time / 1000) % 35);
-    timerElement.textContent = `verification expiration ${remainingTime}s`;
-    
-    if (remainingTime <= 1 ) {
-        handleMouseLeave();
-    }
 }
 
 function updateTimer() {
@@ -472,7 +455,6 @@ function updateTimer() {
     if (timerElement) {
         timerElement.textContent = `Pattern changes in: ${PATTERN_DURATION - Math.floor((time / 1000) % PATTERN_DURATION)}s`;
     }
-    
 }
 
 function animate(currentTime) {
@@ -492,7 +474,7 @@ function animate(currentTime) {
     updateTarget();
     updateNoiseCircles();
     updateTimer();
-    updatestartextime();
+
     animationFrameId = requestAnimationFrame(animate);
 }
 

@@ -104,6 +104,9 @@
             height: 24px;
             background: radial-gradient(circle at 35% 35%, #fca5a5, #ef4444);
             border-radius: 50%;
+            box-shadow: 
+                0 0 20px rgba(239, 68, 68, 0.5),
+                inset 0 0 8px rgba(255, 255, 255, 0.6);
             transition: none;
             z-index: 10;
         }
@@ -116,6 +119,9 @@
             transition: none;
             z-index: 5;
             background: radial-gradient(circle at 35% 35%, #fca5a5, var(--target-color));
+            box-shadow: 
+                0 0 20px rgba(239, 68, 68, 0.4),
+                inset 0 0 8px rgba(255, 255, 255, 0.6);
         }
 
         .target.winning {
@@ -252,14 +258,13 @@
                 </div>
                 <div class="game-info">
                     <div id="status" class="status"></div>
-                    <div id="exp_time" class="exp_time"></div>
                     <div id="timer" class="timer"></div>
                 </div>
                 <div id="game-area" class="game-area" onmousemove="handleMouseMove(event)" onclick="handleClick()" onmouseleave="handleMouseLeave()"></div>
             </div>
         </div>
     </div>
-    <script src="js/game.js" defer></script>
+    <script src="js/newgame.js" defer></script>
 
 </body>
 </html>
