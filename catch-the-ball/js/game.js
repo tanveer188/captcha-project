@@ -151,6 +151,7 @@ async function handleClick() {
         endGame('won');
     } else {
         endGame('lost');
+        
     }
 }
 
@@ -401,26 +402,33 @@ function endGame(status) {
     cancelAnimationFrame(animationFrameId);
     
     const statusElement = document.getElementById('status');
-    statusElement.textContent = status === 'won' ? 'Verification Successful ✓' : 'Verification Failed ✗';
-    statusElement.className = `status ${status}`;
-
-    const gameArea = document.getElementById('game-area');
-    gameArea.className = `game-area ${status}`;
-
     if (status === 'lost') {
+        statusElement.textContent = 'Verification Failed - Time Expired ✗';
+        statusElement.className = 'status lost';
+        
+        // Reset time immediately
+        time = 0;
+        updatestartextime();
+        
+        // Auto restart after 2 seconds
         setTimeout(() => {
-            resetGame(); 
+            resetGame();
         }, 2000);
     } else {
+        statusElement.textContent = 'Verification Successful ✓';
+        statusElement.className = 'status won';
+        
+        // Show play again button
         const playAgainButton = document.createElement('button');
         playAgainButton.className = 'button';
         playAgainButton.textContent = 'Verify Again';
         playAgainButton.onclick = resetGame;
         statusElement.appendChild(document.createElement('br'));
         statusElement.appendChild(playAgainButton);
-
-      
     }
+
+    const gameArea = document.getElementById('game-area');
+    gameArea.className = `game-area ${status}`;
 }
 
 function resetGame() {
@@ -431,12 +439,14 @@ function resetGame() {
     statusElement.textContent = '';
     statusElement.className = 'status';
     
-    // Initialize new captcha instead of selecting random pattern
+    // Reset time and game status
+    time = 0;
+    gameStatus = null;
+    
+    // Initialize new captcha
     initializeCaptcha().then(initialized => {
         if (initialized) {
             gameStarted = true;
-            gameStatus = null;
-            time = 0;
             patternIndex = 0;
             startAnimation();
             updatestartextime();
@@ -485,13 +495,35 @@ function updatestartextime(){
     const timerElement = document.getElementById('exp_time');  
     if (!timerElement) return;
     
-    const remainingTime = 35 - Math.floor((time / 1000) % 35);
-    timerElement.textContent = `verification expiration ${remainingTime}s`;
+    const expirationTime = 35; // Set expiration time to 35 seconds
+    const remainingTime = expirationTime - Math.floor((time / 1000));
     
-    if (remainingTime <= 1 ) {
+    // Check if game is in lost state
+    if (gameStatus == 'lost') {
+        timerElement.textContent = 'Time expired';
+        timerElement.classList.add('warning');
+        return;
+    }
+    
+    timerElement.textContent = `Verification expires in: ${remainingTime}s`;
+    
+    // Add warning class when time is running low
+    if (remainingTime <= 10) {
+        timerElement.classList.add('warning');
+    } else {
+        timerElement.classList.remove('warning');
+    }
+    
+    // Handle expiration
+    if (remainingTime <= 0) {
+        endGame('lost');
         document.getElementById('start-screen').style.display = 'block';
         document.getElementById('game-screen').style.display = 'none';
         time = 0;
+        const blockchain = new Blockchain();
+        blockchain.loadChain();
+        blockchain.addScore(-2, "Verification Expired"); // Penalty for expiration
+        blockchain.minePendingScores();
     }
 }
 
