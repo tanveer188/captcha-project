@@ -143,8 +143,19 @@ function handleMouseLeave() {
     }
 }
 
+async function handleClick() {
+    if (!gameStarted || gameStatus) return;
+    const result = await verifyCaptcha(patternIndex);
+    if (result.success) {
+        captchaToken = result.newToken;
+        endGame('won');
+    } else {
+        endGame('lost');
+    }
+}
+
 // Update the click event handler
-function handleClick(event) {
+function pattern(event) {
     // Check if click was on pattern control button
     if (event.target.id === 'random-pattern') {
         event.stopPropagation(); // Prevent game area click

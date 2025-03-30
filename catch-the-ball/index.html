@@ -419,7 +419,7 @@
                     <div id="timer" class="timer"></div>
                 </div>
                 <div class="pattern-controls">
-                    <button id="random-pattern" class="control-button" onclick="event.stopPropagation(); changePattern();">⟳</button>
+                    <button id="random-pattern" class="control-button" onclick="pattern(event)">⟳</button>
                 </div>
                 <div id="game-area" class="game-area" onmousemove="handleMouseMove(event)" onclick="handleClick(event)" onmouseleave="handleMouseLeave()"></div>
             </div>
@@ -428,7 +428,7 @@
             </div> -->
         </div>
     </div>
-    <script src="js/game.min.js" defer></script>
+    <script src="js/game.js" defer></script>
     
 </body>
 </html>
