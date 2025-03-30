@@ -151,7 +151,6 @@ async function handleClick() {
         endGame('won');
     } else {
         endGame('lost');
-        
     }
 }
 
@@ -176,9 +175,12 @@ const BALL_SIZE = 24;
 const TARGET_SIZE = 28;
 const NOISE_SIZE = 16;
 const PATTERN_DURATION = 5;
-const SPEED_MULTIPLIER = 3
+const SPEED_MULTIPLIER = 3;
 const FIGURE_8_PATTERN_INDEX = 2;
 const NUM_NOISE_CIRCLES = 8;
+const TRAIL_LENGTH = 10; // Number of trail dots
+const TRAIL_OPACITY_STEP = 0.7; // Fade rate for trail
+let trailPositions = []; // Will store recent positions for the trail
 
 // Game state
 let gameStarted = false;
@@ -199,6 +201,11 @@ const patternNames = [
     "Triangle",
     "Zigzag"
 ];
+
+// Utility function for easing
+function easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
 
 // Generate noise patterns
 function generateNoisePatterns() {
@@ -270,30 +277,51 @@ const patterns = [
     
     // Triangle pattern
     (t) => {
-        const period = 3000;
+        const period = 3500; // Slightly longer period for better visibility
         const normalizedTime = (t % period) / period;
-        const side = RADIUS * 1.2;
-        const height = side * Math.sqrt(3) / 2;
         
-        if (normalizedTime < 0.33) {
-            const progress = normalizedTime * 3;
-            return {
-                x: CENTER.x - side/2 + (side * progress),
-                y: CENTER.y + height/3
-            };
-        } else if (normalizedTime < 0.66) {
-            const progress = (normalizedTime - 0.33) * 3;
-            return {
-                x: CENTER.x + side/2 - (side/2 * progress),
-                y: CENTER.y + height/3 - (height * progress)
-            };
-        } else {
-            const progress = (normalizedTime - 0.66) * 3;
-            return {
-                x: CENTER.x - (side/2 * (1 - progress)),
-                y: CENTER.y - height * (2/3) + (height * progress)
-            };
+        // Define the vertices of a clear equilateral triangle
+        const vertices = [
+            { x: CENTER.x, y: CENTER.y - RADIUS * 0.6 },                // Top point
+            { x: CENTER.x - RADIUS * 0.6, y: CENTER.y + RADIUS * 0.4 }, // Bottom left
+            { x: CENTER.x + RADIUS * 0.6, y: CENTER.y + RADIUS * 0.4 }  // Bottom right
+        ];
+        
+        let currentPoint, nextPoint;
+        
+        // Move between vertices with clear pauses at each corner
+        if (normalizedTime < 0.3) {
+            // Move from top to bottom right (with slight pause at top)
+            const segmentTime = normalizedTime / 0.3;
+            const moveTime = Math.min(1, segmentTime * 1.2); // Adjust for pause
+            
+            currentPoint = vertices[0];
+            nextPoint = vertices[2];
+        } 
+        else if (normalizedTime < 0.6) {
+            // Move from bottom right to bottom left (with slight pause at bottom right)
+            const segmentTime = (normalizedTime - 0.3) / 0.3;
+            const moveTime = Math.min(1, segmentTime * 1.2); // Adjust for pause
+            
+            currentPoint = vertices[2];
+            nextPoint = vertices[1];
         }
+        else {
+            // Move from bottom left to top (with slight pause at bottom left)
+            const segmentTime = (normalizedTime - 0.6) / 0.4;
+            const moveTime = Math.min(1, segmentTime * 1.2); // Adjust for pause
+            
+            currentPoint = vertices[1];
+            nextPoint = vertices[0];
+        }
+        
+        // Add easing for smoother movement
+        const progress = easeInOutQuad(normalizedTime % 0.3 / 0.3);
+        
+        return {
+            x: currentPoint.x + (nextPoint.x - currentPoint.x) * progress,
+            y: currentPoint.y + (nextPoint.y - currentPoint.y) * progress
+        };
     },
     
     // Zigzag pattern
@@ -360,19 +388,48 @@ async function verifyCaptcha(patternIndex) {
     }
 }
 
+// Add this function to create a persistent help button that's always visible
+function createHelpButton() {
+    // Check if help button already exists
+    if (document.getElementById('help-button')) {
+        return;
+    }
+    
+    const gameContainer = document.querySelector('.game-container');
+    if (!gameContainer) return;
+    
+    const helpButton = document.createElement('button');
+    helpButton.id = 'help-button';
+    helpButton.className = 'control-button help-btn';
+    helpButton.innerHTML = '?';
+    helpButton.title = 'Show Help';
+    helpButton.style.position = 'absolute';
+    helpButton.style.top = '10px';
+    helpButton.style.right = '10px';
+    helpButton.style.zIndex = '20';
+    helpButton.addEventListener('click', showHelpModal);
+    
+    gameContainer.appendChild(helpButton);
+}
+
+// Call this function at the beginning of your game initialization
+// Update the startGame function to create the help button
 async function startGame() {
     const initialized = await initializeCaptcha();
     
     // Initialize blockchain and add new score
     const blockchain = new Blockchain();
     blockchain.loadChain();
-    blockchain.addScore(5, "Game Started Score"); // Add 5 points when game starts
-    await blockchain.minePendingScores(); // Mine the pending scores
+    blockchain.addScore(5, "Game Started Score");
+    await blockchain.minePendingScores();
 
     if (!initialized) {
         alert('Failed to initialize verification. Please try again.');
         return;
     }
+    
+    // Create the help button first so it's available throughout the game
+    createHelpButton();
 
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'block';
@@ -381,6 +438,14 @@ async function startGame() {
     time = 0;
     patternIndex = 0;
     startAnimation();
+
+    // Show help for first-time users
+    if (!localStorage.getItem('captchaHelpShown')) {
+        setTimeout(() => {
+            showHelpModal();
+            localStorage.setItem('captchaHelpShown', 'true');
+        }, 500);
+    }
 
     // Check total score after mining
     const totalScore = blockchain.getTotalScore();
@@ -391,44 +456,48 @@ async function startGame() {
 }
 
 function handleMouseMove(event) {
+    if (!gameStarted || gameStatus) return;
+    
+    const rect = event.currentTarget.getBoundingClientRect();
+    cursorPosition.x = event.clientX - rect.left;
+    cursorPosition.y = event.clientY - rect.top;
+    
+    // Update player ball position
+    updatePlayerBall();
 }
 
 function handleMouseLeave() {
- 
 }
 
 function endGame(status) {
     gameStatus = status;
     cancelAnimationFrame(animationFrameId);
     
+    const gameArea = document.getElementById('game-area');
+    gameArea.className = `game-area ${status}`;
+    
     const statusElement = document.getElementById('status');
+    statusElement.textContent = status === 'won' ? 'Verification Successful ✓' : 'Verification Failed ✗';
+    statusElement.className = `status ${status}`;
+
+    const gameArea = document.getElementById('game-area');
+    gameArea.className = `game-area ${status}`;
+
     if (status === 'lost') {
-        statusElement.textContent = 'Verification Failed - Time Expired ✗';
-        statusElement.className = 'status lost';
-        
-        // Reset time immediately
-        time = 0;
-        updatestartextime();
-        
-        // Auto restart after 2 seconds
         setTimeout(() => {
-            resetGame();
+            resetGame(); 
         }, 2000);
     } else {
-        statusElement.textContent = 'Verification Successful ✓';
-        statusElement.className = 'status won';
-        
-        // Show play again button
         const playAgainButton = document.createElement('button');
+        playAgainButton.id = 'play-again-btn';
         playAgainButton.className = 'button';
         playAgainButton.textContent = 'Verify Again';
         playAgainButton.onclick = resetGame;
         statusElement.appendChild(document.createElement('br'));
         statusElement.appendChild(playAgainButton);
-    }
 
-    const gameArea = document.getElementById('game-area');
-    gameArea.className = `game-area ${status}`;
+      
+    }
 }
 
 function resetGame() {
@@ -439,14 +508,12 @@ function resetGame() {
     statusElement.textContent = '';
     statusElement.className = 'status';
     
-    // Reset time and game status
-    time = 0;
-    gameStatus = null;
-    
-    // Initialize new captcha
+    // Initialize new captcha instead of selecting random pattern
     initializeCaptcha().then(initialized => {
         if (initialized) {
             gameStarted = true;
+            gameStatus = null;
+            time = 0;
             patternIndex = 0;
             startAnimation();
             updatestartextime();
@@ -477,35 +544,27 @@ function updateNoiseCircles() {
     const gameArea = document.getElementById('game-area');
     const existingNoise = document.querySelectorAll('.noise-circle');
     existingNoise.forEach(el => el.remove());
-    const colors = ['#ee6352', '#08b2e3', '#efe9f4', '#73D997', '#484d6d', '#BEA7E5', '#9B59B6', '#ee6352'];
-
-    noisePositions.forEach((pos, index) => {
+    
+    // Use a single color for all noise circles instead of an array of colors
+    const noiseColor = '#73D997'; // You can choose any color you prefer
+    
+    noisePositions.forEach((pos) => {
         const noise = document.createElement('div');
         noise.className = 'noise-circle';
         noise.style.transition = 'all 2s ease-out';
         noise.style.left = `${pos.x - NOISE_SIZE / 2}px`;
         noise.style.top = `${pos.y - NOISE_SIZE / 2}px`;
-        // Use time to cycle through colors
-        const colorIndex = (index + Math.floor(time/500)) % colors.length;
-        noise.style.backgroundColor = colors[colorIndex];
+        noise.style.backgroundColor = noiseColor;
         gameArea.appendChild(noise);
     });
 }
+
 function updatestartextime(){
     const timerElement = document.getElementById('exp_time');  
     if (!timerElement) return;
     
-    const expirationTime = 35; // Set expiration time to 35 seconds
-    const remainingTime = expirationTime - Math.floor((time / 1000));
-    
-    // Check if game is in lost state
-    if (gameStatus == 'lost') {
-        timerElement.textContent = 'Time expired';
-        timerElement.classList.add('warning');
-        return;
-    }
-    
-    timerElement.textContent = `Verification expires in: ${remainingTime}s`;
+    const remainingTime = 35 - Math.floor((time / 1000) % 35);
+    timerElement.textContent = `verification expiration ${remainingTime}s`;
     
     // Add warning class when time is running low
     if (remainingTime <= 10) {
@@ -532,8 +591,46 @@ function updateTimer() {
     if (timerElement) {
         timerElement.textContent = `Pattern changes in: ${PATTERN_DURATION - Math.floor((time / 1000) % PATTERN_DURATION)}s`;
     }
-    
 }
+
+function updateTrail() {
+    const gameArea = document.getElementById('game-area');
+    
+    // Remove old trail elements
+    const existingTrail = document.querySelectorAll('.trail-dot');
+    existingTrail.forEach(el => el.remove());
+    
+    // Add the current position to the trail and maintain trail length
+    trailPositions.unshift({...targetPosition});
+    if (trailPositions.length > TRAIL_LENGTH) {
+        trailPositions = trailPositions.slice(0, TRAIL_LENGTH);
+    }
+    
+    // Create trail dots with decreasing opacity
+    trailPositions.forEach((pos, index) => {
+        const opacity = Math.pow(TRAIL_OPACITY_STEP, index);
+        if (opacity < 0.05) return; // Skip nearly invisible dots
+        
+        const trailDot = document.createElement('div');
+        trailDot.className = 'trail-dot';
+        const size = TARGET_SIZE * (1 - index * 0.07); // Slightly decreasing size
+        
+        trailDot.style.cssText = `
+            position: absolute;
+            width: ${size}px;
+            height: ${size}px;
+            left: ${pos.x - size/2}px;
+            top: ${pos.y - size/2}px;
+            background-color: rgba(239, 68, 68, ${opacity});
+            border-radius: 50%;
+            z-index: 4;
+            pointer-events: none;
+        `;
+        
+        gameArea.appendChild(trailDot);
+    });
+}
+
 function animate(currentTime) {
     if (!gameStarted || gameStatus) return;
 
@@ -549,10 +646,53 @@ function animate(currentTime) {
     noisePositions = noisePatterns.map(pattern => pattern(time));
     
     updateTarget();
+    updateTrail();
     updateNoiseCircles();
     updateTimer();
     updatestartextime();
     animationFrameId = requestAnimationFrame(animate);
+}
+
+function setupGameEventListeners() {
+    const gameArea = document.getElementById('game-area');
+    
+    // Add click event listener to the game area
+    gameArea.addEventListener('click', function(event) {
+        // Prevent handling clicks if not clicking directly on the game area
+        if (event.target !== gameArea && 
+            !event.target.classList.contains('target') && 
+            !event.target.classList.contains('player-ball') &&
+            !event.target.classList.contains('trail-dot')) {
+            return;
+        }
+        
+        if (!gameStarted || gameStatus) return;
+        
+        // Check if the current pattern is the winning pattern
+        if (patternIndex === winningPatternIndex) {
+            verifyCaptcha(patternIndex).then(result => {
+                if (result.success) {
+                    captchaToken = result.newToken;
+                    endGame('won');
+                } else {
+                    endGame('lost');
+                }
+            });
+        } else {
+            // Wrong pattern was clicked
+            endGame('lost');
+        }
+    });
+    
+    // Make sure random pattern button has event listener
+    const randomButton = document.getElementById('random-pattern');
+    if (randomButton) {
+        randomButton.addEventListener('click', changePattern);
+    }
+    
+    // Set mouse move event listener
+    gameArea.addEventListener('mousemove', handleMouseMove);
+    gameArea.addEventListener('mouseleave', handleMouseLeave);
 }
 
 function startAnimation() {
@@ -571,10 +711,162 @@ function startAnimation() {
     target.className = 'target';
     gameArea.appendChild(target);
 
+    // Set up event listeners
+    setupGameEventListeners();
+
+    // Show help instructions only on first run
+    if (!localStorage.getItem('captchaHelpShown')) {
+        showHelpModal();
+        localStorage.setItem('captchaHelpShown', 'true');
+    }
+
     // Start animation
     animationFrameId = requestAnimationFrame(animate);
 }
-// Add this after the other game functions
+
+// Update showHelpModal to not create another help button
+function showHelpModal() {
+    const modal = document.createElement('div');
+    modal.className = 'help-modal';
+    
+    // Create pattern demonstrations
+    const patternDemos = createPatternDemos();
+    
+    modal.innerHTML = `
+        <div class="help-content">
+            <h3>How to Complete Verification</h3>
+            <p>Follow these steps to verify you're human:</p>
+            <ol>
+                <li>Watch the <span style="color: #ef4444;">red dot</span> moving in different patterns</li>
+                <li>You need to recognize the <strong>${patternNames[winningPatternIndex]}</strong> pattern</li>
+                <li>Use the <button style="display:inline-block; width:25px; height:25px; line-height:25px; border-radius:50%; background:#f0f0f5; border:none; font-size:14px;">⟳</button> button to change patterns</li>
+                <li>When you see the <strong>${patternNames[winningPatternIndex]}</strong> pattern, click it to verify</li>
+                <li>You have 100 seconds to complete the verification</li>
+            </ol>
+            
+            <div class="pattern-examples">
+                <h4>Pattern Examples:</h4>
+                <div class="demo-container">${patternDemos}</div>
+            </div>
+            
+            <button id="close-help" class="button">Got it!</button>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Start pattern animations
+    animatePatternDemos();
+    
+    // Remove the code that adds a help button since we now have a persistent one
+    
+    document.getElementById('close-help').addEventListener('click', () => {
+        modal.classList.add('fadeout');
+        setTimeout(() => modal.remove(), 500);
+    });
+}
+
+function createPatternDemos() {
+    // Create mini demos of each pattern
+    let demosHTML = '';
+    
+    patternNames.forEach((name, index) => {
+        const isWinningPattern = (index === winningPatternIndex);
+        demosHTML += `
+            <div class="pattern-demo ${isWinningPattern ? 'winning-pattern' : ''}">
+                <div class="demo-title">
+                    ${name} 
+                    ${isWinningPattern ? '<span style="color: #22c55e; font-weight: bold;">✓ Target</span>' : ''}
+                </div>
+                <div class="demo-canvas" id="demo-${index}">
+                    <div class="demo-dot" id="dot-${index}"></div>
+                    <svg width="100" height="100" id="svg-${index}">
+                        <path d="" stroke="rgba(239, 68, 68, 0.2)" stroke-width="2" fill="none" id="path-${index}"/>
+                    </svg>
+                </div>
+                <div class="pattern-speed-indicator">
+                    <div class="speed-label">Speed: </div>
+                    <div class="speed-value">Slow (Demo)</div>
+                    <div class="speed-note">Actual game: 2× faster</div>
+                </div>
+            </div>
+        `;
+    });
+    
+    return demosHTML;
+}
+
+function animatePatternDemos() {
+    const demoFrames = [];
+    const svgPaths = [];
+    const pathData = {};
+    
+    // Initialize path data for each pattern
+    patternNames.forEach((_, index) => {
+        pathData[index] = [];
+    });
+    
+    // Animation function for each demo - SLOWED DOWN
+    function animateDemo(timestamp) {
+        const frameDuration = 20; // ms between frames
+        
+        patternNames.forEach((_, index) => {
+            const demoCanvas = document.getElementById(`demo-${index}`);
+            if (!demoCanvas) return;
+            
+            const dot = document.getElementById(`dot-${index}`);
+            const svg = document.getElementById(`svg-${index}`);
+            const path = document.getElementById(`path-${index}`);
+            
+            if (!dot || !svg || !path) return;
+            
+            // Calculate animation progress - SLOWED DOWN (4 seconds instead of 2)
+            const t = (timestamp % 4000) * 2.5; // Slowed down by half
+            
+            // Get pattern position scaled to the demo size
+            const pattern = patterns[index];
+            const fullPos = pattern(t);
+            
+            // Scale position to fit demo canvas (50x50 centered)
+            const scaleFactor = 0.2;
+            const pos = {
+                x: 50 + (fullPos.x - CENTER.x) * scaleFactor,
+                y: 50 + (fullPos.y - CENTER.y) * scaleFactor
+            };
+            
+            // Update dot position
+            dot.style.left = `${pos.x - 4}px`;
+            dot.style.top = `${pos.y - 4}px`;
+            
+            // Store path data (limited to prevent too many points)
+            if (timestamp % frameDuration === 0) {
+                pathData[index].push(pos);
+                if (pathData[index].length > 100) {
+                    pathData[index].shift();
+                }
+                
+                // Update SVG path
+                let pathString = '';
+                pathData[index].forEach((p, i) => {
+                    pathString += (i === 0 ? 'M' : 'L') + p.x + ',' + p.y;
+                });
+                path.setAttribute('d', pathString);
+            }
+        });
+        
+        // Continue animation
+        demoFrames.push(requestAnimationFrame(animateDemo));
+    }
+    
+    // Start animations
+    demoFrames.push(requestAnimationFrame(animateDemo));
+    
+    // Stop animations when the modal is closed
+    document.getElementById('close-help').addEventListener('click', () => {
+        demoFrames.forEach(frame => cancelAnimationFrame(frame));
+    });
+}
+
 function changePattern() {
     if (!gameStarted || gameStatus) return;
 
@@ -584,9 +876,6 @@ function changePattern() {
     // Add visual feedback for pattern change
     const button = document.getElementById('random-pattern');
     button.classList.add('active');
-    
-    // Update pattern name display
-    document.getElementById('pattern-indicator').textContent = patternNames[patternIndex];
     
     // Reset animation timer
     time = 0;
@@ -606,6 +895,7 @@ function changePattern() {
         button.classList.remove('active');
     }, 300);
 }
+
 class Block {
     constructor(index, timestamp, data, previousHash) {
         this.index = index;
@@ -658,161 +948,119 @@ class Block {
     }
 }
 
-    // // Blockchain class
-    function Blockchain() {
-        // Initialize properties
-        this.chain = [];
-        this.difficulty = 4;
-        this.pendingScores = [];
+function Blockchain() {
+    this.chain = [];
+    this.difficulty = 4;
+    this.pendingScores = [];
+    
+    this.createGenesisBlock = function() {
+        return new Block(0, Date.now(), {score: 0, description: "Genesis Block"}, '0');
+    };
+    
+    this.getLatestBlock = function() {
+        return this.chain[this.chain.length - 1];
+    };
+    
+    this.addScore = function(newScore, description) {
+        this.pendingScores.push({
+            score: newScore,
+            description: description || `Score added at ${new Date().toLocaleString()}`
+        });
+    };
+    
+    this.minePendingScores = function() {
+        if (this.pendingScores.length === 0) {
+            return Promise.resolve();
+        }
         
-        // Method definitions
-        this.createGenesisBlock = function() {
-            return new Block(0, Date.now(), {score: 0, description: "Genesis Block"}, '0');
-        };
+        const minePromises = [];
         
-        this.getLatestBlock = function() {
-            return this.chain[this.chain.length - 1];
-        };
-        
-        this.addScore = function(newScore, description) {
-            this.pendingScores.push({
-                score: newScore,
-                description: description || `Score added at ${new Date().toLocaleString()}`
-            });
-        };
-        
-        this.minePendingScores = function() {
-            if (this.pendingScores.length === 0) {
-                return Promise.resolve();
-            }
+        for (const scoreData of this.pendingScores) {
+            const newBlock = new Block(
+                this.chain.length,
+                Date.now(),
+                scoreData,
+                this.getLatestBlock().hash
+            );
             
-            const minePromises = [];
-            
-            for (const scoreData of this.pendingScores) {
-                const newBlock = new Block(
-                    this.chain.length,
-                    Date.now(),
-                    scoreData,
-                    this.getLatestBlock().hash
-                );
-                
-                minePromises.push(new Promise(resolve => {
-                    setTimeout(() => {
-                        newBlock.mineBlock(this.difficulty);
-                        this.chain.push(newBlock);
-                        resolve();
-                    }, 0);
-                }));
-            }
-            
-            return Promise.all(minePromises).then(() => {
-                this.pendingScores = [];
-                this.saveChain();
-            });
-        };
+            minePromises.push(new Promise(resolve => {
+                setTimeout(() => {
+                    newBlock.mineBlock(this.difficulty);
+                    this.chain.push(newBlock);
+                    resolve();
+                }, 0);
+            }));
+        }
         
-        this.saveChain = function() {
-            localStorage.setItem('scoreChain', JSON.stringify(this.chain));
-        };
-        
-        this.loadChain = function() {
-            const savedChain = localStorage.getItem('scoreChain');
-            if (savedChain) {
-                try {
-                    const parsedChain = JSON.parse(savedChain);
-                    this.chain = parsedChain.map(blockData => {
-                        const block = new Block(
-                            blockData.index,
-                            blockData.timestamp,
-                            blockData.data,
-                            blockData.previousHash
-                        );
-                        block.hash = blockData.hash;
-                        block.nonce = blockData.nonce;
-                        return block;
-                    });
-                } catch (e) {
-                    console.error('Error loading chain:', e);
-                    this.chain = [this.createGenesisBlock()];
-                }
-            } else {
+        return Promise.all(minePromises).then(() => {
+            this.pendingScores = [];
+            this.saveChain();
+        });
+    };
+    
+    this.saveChain = function() {
+        localStorage.setItem('scoreChain', JSON.stringify(this.chain));
+    };
+    
+    this.loadChain = function() {
+        const savedChain = localStorage.getItem('scoreChain');
+        if (savedChain) {
+            try {
+                const parsedChain = JSON.parse(savedChain);
+                this.chain = parsedChain.map(blockData => {
+                    const block = new Block(
+                        blockData.index,
+                        blockData.timestamp,
+                        blockData.data,
+                        blockData.previousHash
+                    );
+                    block.hash = blockData.hash;
+                    block.nonce = blockData.nonce;
+                    return block;
+                });
+            } catch (e) {
+                console.error('Error loading chain:', e);
                 this.chain = [this.createGenesisBlock()];
             }
-        };
-        
-        this.isChainValid = function() {
-            for (let i = 1; i < this.chain.length; i++) {
-                const currentBlock = this.chain[i];
-                const previousBlock = this.chain[i - 1];
-                
-                if (currentBlock.hash !== currentBlock.calculateHash()) {
-                    return false;
-                }
-                
-                if (currentBlock.previousHash !== previousBlock.hash) {
-                    return false;
+        } else {
+            this.chain = [this.createGenesisBlock()];
+        }
+    };
+    
+    this.isChainValid = function() {
+        for (let i = 1; i < this.chain.length; i++) {
+            const currentBlock = this.chain[i];
+            const previousBlock = this.chain[i - 1];
+            
+            if (currentBlock.hash !== currentBlock.calculateHash()) {
+                return false;
+            }
+            
+            if (currentBlock.previousHash !== previousBlock.hash) {
+                return false;
+            }
+        }
+        return true;
+    };
+    
+    this.getTotalScore = function() {
+        let total = 0;
+        for (const block of this.chain) {
+            if (block.data && block.data.score) {
+                const score = parseInt(block.data.score, 10);
+                if (!isNaN(score)) {
+                    total += score;
                 }
             }
-            return true;
-        };
-        
-        this.getTotalScore = function() {
-            let total = 0;
-            for (const block of this.chain) {
-                if (block.data && block.data.score) {
-                    // Use base 10 for parsing integers and handle invalid values
-                    const score = parseInt(block.data.score, 10);
-                    if (!isNaN(score)) {
-                        total += score;
-                    }
-                }
-            }
-            return total;
-        };
-        
-        // Initialize the chain
-        this.loadChain();
-    }
-
-// // Add a new function to update score display
-// function displayBlockchainData() {
-//     const blockchain = new Blockchain();
-//     blockchain.loadChain();
+        }
+        return total;
+    };
     
-//     // Create or get the display container
-//     let displayDiv = document.getElementById('blockchain-display');
-//     if (!displayDiv) {
-//         displayDiv = document.createElement('div');
-//         displayDiv.id = 'blockchain-display';
-//         document.querySelector('.game-container').appendChild(displayDiv);
-//     }
-    
-//     // Clear previous content
-//     displayDiv.innerHTML = `
-//         <h3>Blockchain Data</h3>
-//         <div class="chain-info">
-//             <p>Total Score: ${blockchain.getTotalScore()}</p>
-//             <p>Chain Length: ${blockchain.chain.length}</p>
-//             <p>Pending Scores: ${blockchain.pendingScores.length}</p>
-//             <p>Mining Difficulty: ${blockchain.difficulty}</p>
-//         </div>
-//         <div class="blocks-container"></div>
-//     `;
+    this.loadChain();
+}
 
-//     // Add each block's data
-//     const blocksContainer = displayDiv.querySelector('.blocks-container');
-//     blockchain.chain.forEach((block, index) => {
-//         const blockDiv = document.createElement('div');
-//         blockDiv.className = 'block-data';
-//         blockDiv.innerHTML = `
-//             <h4>Block #${block.index}</h4>
-//             <p>Timestamp: ${new Date(block.timestamp).toLocaleString()}</p>
-//             <p>Score: ${block.data.score}</p>
-//             <p>Description: ${block.data.description}</p>
-//             <p>Hash: ${block.hash.substring(0, 20)}...</p>
-//             <p>Previous Hash: ${block.previousHash.substring(0, 20)}...</p>
-//             <p>Nonce: ${block.nonce}</p>
-//         `;
-//         blocksContainer.appendChild(blockDiv);
-//     });
-// }
+// Add this to your window.onload or in an initialization function
+window.addEventListener('DOMContentLoaded', function() {
+    // Create help button when the page loads
+    createHelpButton();
+});
