@@ -1,11 +1,207 @@
 const API_URL = 'http://localhost:5000/api/captcha';
 let captchaToken = null;
-let animationId = null;
-let gameStartTime = null;
-let ball = document.getElementById('player-ball');
-let messageElement = document.getElementById('status');
-let playAgainButton = document.querySelector('.button');
-let isGameActive = false;
+let messageElement = null;
+
+let canvas, ctx, chars = [], charPositions = [];
+let captchaText = '';
+let characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+let symbols = '!@#$%^&*+=<>?[]{}';
+let letterSize = 36;  // Fixed size for letters
+let symbolSize = 40;  // Fixed size for symbols
+let allCharacters = characters + symbols;
+let animationId;
+let unblurredIndex = -1;
+let unblurTimer = null;
+let enteredSequence = [];
+let successCount = 0;
+let failCount = 0;
+let difficulty = 1;
+let timeLeft = 20;
+let timerInterval = null;
+
+function resizeCanvas() {
+    const container = canvas.parentElement;
+    const containerWidth = container.clientWidth;
+    const maxWidth = 400;
+    const maxHeight = 300;
+    
+    // Calculate new dimensions maintaining aspect ratio
+    let newWidth = Math.min(containerWidth - 40, maxWidth);
+    let newHeight = (newWidth * maxHeight) / maxWidth;
+    
+    // Update canvas size
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    
+    // Adjust letter sizes based on canvas size
+    letterSize = Math.max(24, Math.floor(newWidth / 12));
+    symbolSize = letterSize + 4;
+    
+    // Regenerate CAPTCHA if it exists
+    if (chars.length > 0) {
+        generateCaptcha();
+    }
+}
+
+// Add debounce utility function
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Initialize canvas when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    canvas = document.getElementById('gameCanvas');
+    if (!canvas) {
+        console.error('Canvas element not found');
+        return;
+    }
+    ctx = canvas.getContext('2d');
+    
+    // Initial resize
+    resizeCanvas();
+    
+    // Add resize event listener
+    window.addEventListener('resize', debounce(resizeCanvas, 250));
+    
+    generateCaptcha();
+});
+
+function updateStats(success) {
+    if (success) {
+        successCount++;
+        document.getElementById('success-count').textContent = successCount;
+        // Increase difficulty every 3 successful attempts
+        if (successCount % 3 === 0) {
+            difficulty = Math.min(difficulty + 1, 3);
+        }
+    } else {
+        failCount++;
+        document.getElementById('fail-count').textContent = failCount;
+    }
+}
+
+function startTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+    timeLeft = 20; // Changed from 10 to 20 seconds
+    updateTimerDisplay();
+    
+    timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+            handleTimeout();
+        }
+    }, 1000);
+}
+
+function updateTimerDisplay() {
+    const timerElement = document.getElementById('timer');
+    timerElement.textContent = `Time: ${timeLeft}s`;
+    // Update warning threshold to 5 seconds
+    timerElement.className = timeLeft <= 5 ? 'timer warning' : 'timer';
+}
+
+function handleTimeout() {
+    const result = document.getElementById('result');
+    result.textContent = 'Time\'s up! Try again.';
+    result.className = 'error';
+    updateStats(false);
+    showTryAgainButton();
+}
+
+function showTryAgainButton() {
+    document.getElementById('tryAgainBtn').style.display = 'block';
+    document.getElementById('captcha-input').disabled = true;
+}
+
+function hideTryAgainButton() {
+    document.getElementById('tryAgainBtn').style.display = 'none';
+    document.getElementById('captcha-input').disabled = false;
+}
+
+function resetGame() {
+    enteredSequence = [];
+    document.getElementById('sequence').textContent = '';
+    document.getElementById('captcha-input').value = '';
+    hideTryAgainButton();
+    generateCaptcha();
+}
+
+function restartGame() {
+    // Cancel all animations and timers first
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+    }
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    if (unblurTimer) {
+        clearTimeout(unblurTimer);
+        unblurTimer = null;
+    }
+
+    // Reset game state
+    successCount = 0;
+    failCount = 0;
+    difficulty = 1;
+    timeLeft = 20;
+    chars = [];
+    charPositions = [];
+    enteredSequence = [];
+    captchaText = '';
+    unblurredIndex = -1;
+    
+    // Reset UI elements
+    const elements = {
+        'success-count': '0',
+        'fail-count': '0',
+        'sequence': '',
+        'result': '',
+        'timer': 'Time: 20s',
+        'captcha-input': ''
+    };
+
+    for (const [id, value] of Object.entries(elements)) {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+            if (id === 'captcha-input') element.value = value;
+            if (id === 'result') element.className = '';
+        }
+    }
+
+    // Re-enable input and hide try again button
+    const input = document.getElementById('captcha-input');
+    if (input) {
+        input.disabled = false;
+    }
+    const tryAgainBtn = document.getElementById('tryAgainBtn');
+    if (tryAgainBtn) {
+        tryAgainBtn.style.display = 'none';
+    }
+
+    // Clear canvas
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Start fresh game
+    setTimeout(() => {
+        generateCaptcha();
+    }, 100);
+}
 
 async function initializeCaptcha() {
     try {
@@ -25,475 +221,231 @@ async function initializeCaptcha() {
         captchaToken = data.token;
         return data;
     } catch (error) {
-        messageElement.textContent = `Error: ${error.message}`;
-        messageElement.style.color = '#ff4444';
+        showError(`Error: ${error.message}`);
         return null;
     }
 }
 
-async function updateBallPosition() {
-    if (!isGameActive || !captchaToken) return;
+function showError(message) {
+    if (!messageElement) {
+        messageElement = document.createElement('div');
+        messageElement.className = 'error-message';
+        document.querySelector('.game-container').appendChild(messageElement);
+    }
+    messageElement.textContent = message;
+    messageElement.style.color = '#ff4444';
+}
 
+async function generateCaptcha() {
+    if (!ctx) return;
+    
     try {
-        const response = await fetch(`${API_URL}/position`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ token: captchaToken })
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to get position');
-        }
-
-        ball.style.left = `${data.x}px`;
-        ball.style.top = `${data.y}px`;
+        const initData = await initializeCaptcha();
+        if (!initData) return;
         
-        animationId = requestAnimationFrame(updateBallPosition);
+        chars = [];
+        charPositions = [];
+        enteredSequence = [];
+        
+        const totalChars = 10;
+        const requiredChars = 4;
+        
+        // Generate solution characters (only letters)
+        const solutionChars = Array.from({length: requiredChars}, () => ({
+            char: characters.charAt(Math.floor(Math.random() * characters.length)),
+            isBlurred: true,
+            hasBeenUnblurred: false,
+            isRequired: true,
+            isSymbol: false,
+            opacity: 1,
+            size: letterSize  // Use fixed letter size
+        }));
+        
+        // Generate decoy characters
+        const decoyChars = Array.from({length: totalChars - requiredChars}, () => {
+            const useSymbol = Math.random() < 0.6; // Increased symbol probability
+            return {
+                char: useSymbol ? 
+                    symbols.charAt(Math.floor(Math.random() * symbols.length)) :
+                    characters.charAt(Math.floor(Math.random() * characters.length)),
+                isBlurred: true,
+                hasBeenUnblurred: false,
+                isRequired: false,
+                isSymbol: useSymbol,
+                opacity: useSymbol ? 0.8 : 0.6, // Increased symbol opacity
+                size: useSymbol ? symbolSize : letterSize  // Use fixed sizes
+            };
+        });
+        
+        // Combine and shuffle characters
+        chars = [...solutionChars, ...decoyChars].sort(() => Math.random() - 0.5);
+        captchaText = initData.solution || solutionChars.map(c => c.char).join('');
+        
+        // Generate positions with varying speeds
+        chars.forEach((char) => {
+            const baseSpeed = 2 + difficulty;
+            const speed = char.isSymbol ? baseSpeed * 1.2 : baseSpeed;
+            
+            charPositions.push({
+                x: Math.random() * (canvas.width - 100) + 50,
+                y: Math.random() * (canvas.height - 100) + 50,
+                dx: (Math.random() - 0.5) * speed,
+                dy: (Math.random() - 0.5) * speed,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: char.isSymbol ? 0.04 : 0.02
+            });
+        });
+        
+        startAnimation();
+        startUnblurSequence();
+        startTimer();
     } catch (error) {
-        console.error('Error updating position:', error);
-        stopGame();
+        showError(`Error: ${error.message}`);
     }
 }
 
-async function verifyCaptcha(patternIndex) {
-    try {
-        const response = await fetch(`${API_URL}/verify`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                token: captchaToken,
-                pattern_index: patternIndex
-            })
-        });
-        const data = await response.json();
+function startUnblurSequence() {
+    if (unblurTimer) clearTimeout(unblurTimer);
+       
+    function unblurNext() {
+
+        const nextIndex = chars.findIndex(c => !c.hasBeenUnblurred);
+        if (nextIndex === -1) return;
+
+        unblurredIndex = nextIndex;
+        chars[nextIndex].isBlurred = false;
+        chars[nextIndex].hasBeenUnblurred = true;
+
+        const blurDuration = Math.max(3000 - (difficulty * 500), 1000);
+        unblurTimer = setTimeout(() => {
+            chars[nextIndex].isBlurred = true;
+            unblurredIndex = -1;
+        }, blurDuration);
+
+   
+        unblurTimer = setTimeout(unblurNext, Math.random() * 2000 + 1000);
+    }
+
+    unblurTimer = setTimeout(unblurNext, 1000);
+}
+
+function startAnimation() {
+    if (animationId) cancelAnimationFrame(animationId);
+    animate();
+}
+
+function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    chars.forEach((charObj, index) => {
+        let pos = charPositions[index];
+   
+        if (pos.y < 30 || pos.y > canvas.height - 30) {
+            pos.dy *= charObj.isSymbol ? -0.9 : -1;
+            pos.y = pos.y < 30 ? 30 : canvas.height - 30;
+        }
+        if (pos.x < 30 || pos.x > canvas.width - 30) {
+            pos.dx *= charObj.isSymbol ? -0.9 : -1;
+            pos.x = pos.x < 30 ? 30 : canvas.width - 30;
+        }
+
+    
+        pos.y += pos.dy;
+        pos.x += pos.dx;
+        pos.rotation += pos.rotationSpeed;
+
+        ctx.save();
+        ctx.font = `${charObj.isSymbol ? 'normal' : 'bold'} ${charObj.size}px Arial`;
+        ctx.fillStyle = `rgba(0, 0, 0, ${charObj.opacity})`;
         
-        if (data.success) {
-            messageElement.textContent = 'Success! You passed the CAPTCHA!';
-            messageElement.style.color = '#4CAF50';
-            playAgainButton.style.display = 'block';
+        ctx.translate(pos.x, pos.y);
+        ctx.rotate(pos.rotation);
+        
+        if (charObj.isBlurred) {
+            ctx.filter = `blur(${charObj.isSymbol ? 4 : 6}px)`; // Reduced blur for symbols
         } else {
-            messageElement.textContent = 'Incorrect pattern. Try again!';
-            messageElement.style.color = '#ff4444';
-            resetGame();
+            ctx.filter = 'none';
+            if (charObj.isRequired) {
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                ctx.shadowBlur = 10;
+                ctx.fillStyle = '#000000';
+            }
         }
-    } catch (error) {
-        messageElement.textContent = `Error: ${error.message}`;
-        messageElement.style.color = '#ff4444';
-    }
-    stopGame();
+        
+        // Adjust position based on character type
+        const offset = charObj.isSymbol ? -charObj.size/2 : -12;
+        ctx.fillText(charObj.char, offset, offset);
+        ctx.restore();
+    });
+
+    animationId = requestAnimationFrame(animate);
 }
 
-function stopGame() {
-    isGameActive = false;
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-    }
-}
-
-async function startGame() {
-    const data = await initializeCaptcha();
-    if (!data) return;
-
-    messageElement.textContent = 'Watch the pattern and select it below!';
-    messageElement.style.color = '#ffffff';
-    playAgainButton.style.display = 'none';
+async function validateCaptcha() {
+    const input = document.getElementById('captcha-input').value.toUpperCase();
+    const result = document.getElementById('result');
     
-    isGameActive = true;
-    gameStartTime = Date.now();
-    updateBallPosition();
-}
+    if (input) {
+        enteredSequence.push(input);
+        document.getElementById('sequence').textContent = 
+            `Entered: ${enteredSequence.join(' ')} (${enteredSequence.length}/4)`;
+        document.getElementById('captcha-input').value = '';
+    }
 
-function resetGame() {
-    stopGame();
-    startGame();
-}
+ 
+    if (enteredSequence.length === 4) {
+        clearInterval(timerInterval);
+        const enteredText = enteredSequence.join('');
+        
+        try {
+            const response = await fetch(`${API_URL}/verify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    token: captchaToken,
+                    solution: enteredText
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Verification failed');
+            }
 
-function handleMouseMove(event) {
-    if (!isGameActive) return;
-    
-    const rect = event.currentTarget.getBoundingClientRect();
-    ball.style.left = `${event.clientX - rect.left - 12}px`;
-    ball.style.top = `${event.clientY - rect.top - 12}px`;
-}
-
-function handleMouseLeave() {
-    if (!isGameActive) {
+            if (data.success) {
+                result.textContent = 'CAPTCHA verified successfully!';
+                result.className = 'success';
+                updateStats(true);
+            } else {
+                result.textContent = 'CAPTCHA verification failed. Try again.';
+                result.className = 'error';
+                updateStats(false);
+                showTryAgainButton();
+                return;
+            }
+        } catch (error) {
+            showError(`Error: ${error.message}`);
+            return;
+        }
+        
         resetGame();
     }
 }
 
-function handleClick() {
-    if (!isGameActive) return;
-    verifyCaptcha(0);
-}
-
-// Game constants
-const RADIUS = 200;
-const CENTER = { x: RADIUS, y: RADIUS };
-const BALL_SIZE = 24;
-const TARGET_SIZE = 28;
-const NOISE_SIZE = 16;
-const PATTERN_DURATION = 5;
-const SPEED_MULTIPLIER = 2;
-const FIGURE_8_PATTERN_INDEX = 2;
-const NUM_NOISE_CIRCLES = 8;
-
-// Game state
-let gameStarted = false;
-let gameStatus = null;
-let time = 0;
-let patternIndex = 0;
-let cursorPosition = { x: 0, y: 0 };
-let targetPosition = { x: 100, y: 0 };
-let noisePositions = [];
-let animationFrameId;
-let winningPatternIndex;
-let patternToWatch;
-
-const patternNames = [
-    "Circle",
-    "Square",
-    "Figure-8",
-    "Triangle",
-    "Zigzag"
-];
-
-// Generate noise patterns
-function generateNoisePatterns() {
-    return Array(NUM_NOISE_CIRCLES).fill(null).map(() => {
-        const speed = 0.003 + Math.random() * 0.002;
-        const radius = RADIUS * (0.3 + Math.random() * 0.5);
-        const phase = Math.random() * Math.PI * 2;
-        const centerOffset = {
-            x: (Math.random() - 0.5) * RADIUS * 0.5,
-            y: (Math.random() - 0.5) * RADIUS * 0.5
-        };
-        
-        return (t) => ({
-            x: CENTER.x + centerOffset.x + Math.cos(t * speed + phase) * radius,
-            y: CENTER.y + centerOffset.y + Math.sin(t * speed + phase) * radius
+document.addEventListener('DOMContentLoaded', function() {
+    const input = document.getElementById('captcha-input');
+    if (input) {
+        input.addEventListener('keypress', function(e) {
+            if (e.key !== 'Enter' && !/^[A-Za-z]$/.test(e.key)) {
+                e.preventDefault();
+                return false;
+            }
+            if (e.key === 'Enter') {
+                validateCaptcha();
+            }
         });
-    });
-}
-
-const noisePatterns = generateNoisePatterns();
-
-// Movement patterns
-const patterns = [
-    // Circle pattern
-    (t) => {
-        const angle = t * 0.002;
-        return {
-            x: CENTER.x + Math.cos(angle) * (RADIUS * 0.7),
-            y: CENTER.y + Math.sin(angle) * (RADIUS * 0.7)
-        };
-    },
-    
-    // Square pattern
-    (t) => {
-        const period = 4000;
-        const normalizedTime = (t % period) / period;
-        const side = RADIUS * 1.2;
-        
-        if (normalizedTime < 0.25) {
-            return {
-                x: CENTER.x - side/2 + (side * normalizedTime * 4),
-                y: CENTER.y - side/2
-            };
-        } else if (normalizedTime < 0.5) {
-            return {
-                x: CENTER.x + side/2,
-                y: CENTER.y - side/2 + (side * (normalizedTime - 0.25) * 4)
-            };
-        } else if (normalizedTime < 0.75) {
-            return {
-                x: CENTER.x + side/2 - (side * (normalizedTime - 0.5) * 4),
-                y: CENTER.y + side/2
-            };
-        } else {
-            return {
-                x: CENTER.x - side/2,
-                y: CENTER.y + side/2 - (side * (normalizedTime - 0.75) * 4)
-            };
-        }
-    },
-    
-    // Figure-8 pattern (winning pattern)
-    (t) => {
-        const angle = t * 0.002;
-        return {
-            x: CENTER.x + Math.sin(angle * 2) * (RADIUS * 0.7),
-            y: CENTER.y + Math.sin(angle) * (RADIUS * 0.5)
-        };
-    },
-    
-    // Triangle pattern
-    (t) => {
-        const period = 3000;
-        const normalizedTime = (t % period) / period;
-        const side = RADIUS * 1.2;
-        const height = side * Math.sqrt(3) / 2;
-        
-        if (normalizedTime < 0.33) {
-            const progress = normalizedTime * 3;
-            return {
-                x: CENTER.x - side/2 + (side * progress),
-                y: CENTER.y + height/3
-            };
-        } else if (normalizedTime < 0.66) {
-            const progress = (normalizedTime - 0.33) * 3;
-            return {
-                x: CENTER.x + side/2 - (side/2 * progress),
-                y: CENTER.y + height/3 - (height * progress)
-            };
-        } else {
-            const progress = (normalizedTime - 0.66) * 3;
-            return {
-                x: CENTER.x - (side/2 * (1 - progress)),
-                y: CENTER.y - height * (2/3) + (height * progress)
-            };
-        }
-    },
-    
-    // Zigzag pattern
-    (t) => {
-        const frequency = 0.003;
-        const amplitude = RADIUS * 0.7;
-        return {
-            x: CENTER.x + Math.sin(t * frequency) * amplitude,
-            y: CENTER.y + ((t % (2 * amplitude)) - amplitude)
-        };
     }
-];
-
-async function initializeCaptcha() {
-    try {
-        const response = await fetch(`${API_URL}/init`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                domain: window.location.origin
-            })
-        });
-
-        const data = await response.json();
-        if (data.token) {
-            captchaToken = data.token;
-            // Update pattern information from backend
-            winningPatternIndex = data.pattern_index;
-            patternToWatch = data.pattern;
-            document.getElementById('target-pattern').textContent = patternToWatch;
-            return true;
-        }
-        return false;
-    } catch (error) {
-        console.error('Failed to initialize captcha:', error);
-        return false;
-    }
-}
-
-async function verifyCaptcha(patternIndex) {
-    try {
-        const response = await fetch(`${API_URL}/verify`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                token: captchaToken,
-                pattern_index: patternIndex
-            })
-        });
-
-        const data = await response.json();
-        return {
-            success: data.success,
-            message: data.message,
-            newToken: data.verification_token
-        };
-    } catch (error) {
-        console.error('Failed to verify captcha:', error);
-        return { success: false, message: 'Verification failed' };
-    }
-}
-
-async function startGame() {
-    const initialized = await initializeCaptcha();
-    if (!initialized) {
-        alert('Failed to initialize verification. Please try again.');
-        return;
-    }
-
-    document.getElementById('start-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'block';
-    gameStarted = true;
-    gameStatus = null;
-    time = 0;
-    patternIndex = 0;
-    startAnimation();
-}
-
-async function handleClick() {
-    if (!gameStarted || gameStatus) return;
-    
-    const result = await verifyCaptcha(patternIndex);
-    if (result.success) {
-        captchaToken = result.newToken;
-        endGame('won');
-    } else {
-        endGame('lost');
-    }
-}
-
-function handleMouseMove(event) {
-    if (!gameStarted || gameStatus) return;
-    
-    const rect = event.currentTarget.getBoundingClientRect();
-    cursorPosition = {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top
-    };
-    updatePlayerBall();
-}
-
-function handleMouseLeave() {
-    if (!gameStatus) {
-        gameStarted = false;
-        document.getElementById('game-screen').style.display = 'none';
-        document.getElementById('start-screen').style.display = 'block';
-    }
-}
-
-function endGame(status) {
-    gameStatus = status;
-    cancelAnimationFrame(animationFrameId);
-    
-    const statusElement = document.getElementById('status');
-    statusElement.textContent = status === 'won' ? 'Verification Successful ✓' : 'Verification Failed ✗';
-    statusElement.className = `status ${status}`;
-    
-    const gameArea = document.getElementById('game-area');
-    gameArea.className = `game-area ${status}`;
-
-    if (status === 'lost') {
-        setTimeout(() => {
-            resetGame();
-        }, 2000);
-    } else {
-        const playAgainButton = document.createElement('button');
-        playAgainButton.className = 'button';
-        playAgainButton.textContent = 'Verify Again';
-        playAgainButton.onclick = resetGame;
-        statusElement.appendChild(document.createElement('br'));
-        statusElement.appendChild(playAgainButton);
-    }
-}
-
-function resetGame() {
-    const gameArea = document.getElementById('game-area');
-    gameArea.className = 'game-area';
-    
-    const statusElement = document.getElementById('status');
-    statusElement.textContent = '';
-    statusElement.className = 'status';
-    
-    // Initialize new captcha instead of selecting random pattern
-    initializeCaptcha().then(initialized => {
-        if (initialized) {
-            gameStarted = true;
-            gameStatus = null;
-            time = 0;
-            patternIndex = 0;
-            startAnimation();
-        } else {
-            alert('Failed to initialize verification. Please try again.');
-        }
-    });
-}
-
-function updatePlayerBall() {
-    const playerBall = document.getElementById('player-ball');
-    if (playerBall) {
-        playerBall.style.left = `${cursorPosition.x - BALL_SIZE / 2}px`;
-        playerBall.style.top = `${cursorPosition.y - BALL_SIZE / 2}px`;
-    }
-}
-
-function updateTarget() {
-    const target = document.getElementById('target');
-    if (target) {
-        target.style.left = `${targetPosition.x - TARGET_SIZE / 2}px`;
-        target.style.top = `${targetPosition.y - TARGET_SIZE / 2}px`;
-        target.className = `target ${patternIndex === winningPatternIndex ? 'winning' : 'losing'}`;
-    }
-}
-
-function updateNoiseCircles() {
-    const gameArea = document.getElementById('game-area');
-    const existingNoise = document.querySelectorAll('.noise-circle');
-    existingNoise.forEach(el => el.remove());
-
-    noisePositions.forEach(pos => {
-        const noise = document.createElement('div');
-        noise.className = 'noise-circle';
-        noise.style.left = `${pos.x - NOISE_SIZE / 2}px`;
-        noise.style.top = `${pos.y - NOISE_SIZE / 2}px`;
-        gameArea.appendChild(noise);
-    });
-}
-
-function updateTimer() {
-    const timerElement = document.getElementById('timer');
-    if (timerElement) {
-        timerElement.textContent = `Pattern changes in: ${PATTERN_DURATION - Math.floor((time / 1000) % PATTERN_DURATION)}s`;
-    }
-}
-
-function animate(currentTime) {
-    if (!gameStarted || gameStatus) return;
-
-    const deltaTime = currentTime - (time || currentTime);
-    time = currentTime;
-
-    if (Math.floor((time - deltaTime) / (PATTERN_DURATION * 1000)) !== 
-        Math.floor(time / (PATTERN_DURATION * 1000))) {
-        patternIndex = (patternIndex + 1) % patterns.length;
-    }
-
-    targetPosition = patterns[patternIndex](time);
-    noisePositions = noisePatterns.map(pattern => pattern(time));
-
-    updateTarget();
-    updateNoiseCircles();
-    updateTimer();
-
-    animationFrameId = requestAnimationFrame(animate);
-}
-
-function startAnimation() {
-    // Create game elements
-    const gameArea = document.getElementById('game-area');
-    
-    // Create player ball
-    const playerBall = document.createElement('div');
-    playerBall.id = 'player-ball';
-    playerBall.className = 'player-ball';
-    gameArea.appendChild(playerBall);
-
-    // Create target
-    const target = document.createElement('div');
-    target.id = 'target';
-    target.className = 'target';
-    gameArea.appendChild(target);
-
-    // Start animation
-    animationFrameId = requestAnimationFrame(animate);
-}
+});

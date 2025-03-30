@@ -52,6 +52,7 @@
             transform: translateX(-50%);
             background: var(--accent-primary);
             color: white;
+            text-align: center;
             padding: 0.5rem 1.5rem;
             border-radius: 0.5rem;
             font-weight: 500;
@@ -419,7 +420,6 @@
                 </div>
                 <div class="pattern-controls">
                     <button id="random-pattern" class="control-button" onclick="event.stopPropagation(); changePattern();">⟳</button>
-                    <div id="pattern-indicator"></div>
                 </div>
                 <div id="game-area" class="game-area" onmousemove="handleMouseMove(event)" onclick="handleClick(event)" onmouseleave="handleMouseLeave()"></div>
             </div>
@@ -428,7 +428,7 @@
             </div> -->
         </div>
     </div>
-    <script src="js/game.js" defer></script>
+    <script src="js/game.min.js" defer></script>
     
 </body>
 </html>

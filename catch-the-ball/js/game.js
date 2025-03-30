@@ -382,6 +382,7 @@ function handleMouseMove(event) {
 }
 
 function handleMouseLeave() {
+ 
 }
 
 function endGame(status) {
@@ -477,7 +478,9 @@ function updatestartextime(){
     timerElement.textContent = `verification expiration ${remainingTime}s`;
     
     if (remainingTime <= 1 ) {
-        handleMouseLeave();
+        document.getElementById('start-screen').style.display = 'block';
+        document.getElementById('game-screen').style.display = 'none';
+        time = 0;
     }
 }
 
@@ -488,7 +491,6 @@ function updateTimer() {
     }
     
 }
-
 function animate(currentTime) {
     if (!gameStarted || gameStatus) return;
 
@@ -502,7 +504,7 @@ function animate(currentTime) {
 
     targetPosition = patterns[patternIndex](time);
     noisePositions = noisePatterns.map(pattern => pattern(time));
-
+    
     updateTarget();
     updateNoiseCircles();
     updateTimer();
